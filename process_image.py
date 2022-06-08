@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import os
 from astropy.io import fits
+import matplotlib.pyplot as plt
 
 
 def image_median(directory):
@@ -36,8 +37,8 @@ def image_median(directory):
         
         with fits.open(input_file) as hdul1:
             img = hdul1[0].data
-            # Excluding 3D arrays
-            if len(np.shape(img)) !=2: continue
+            # Only 1s element of 3D arrays
+            if len(np.shape(img)) == 3: img = img[0,:,:]
             # List of images
             img_list.append(img)
             
@@ -55,7 +56,9 @@ def save_median_to_file(directory):
     directory: str
         Path to the folder
     """
+    # Ignoring empty folders and the export folder
     if len(os.listdir(directory)) == 0: return
+    if "master" in directory: return
     
     # Getting the image
     img = image_median(directory)
@@ -82,7 +85,8 @@ def save_median_to_file(directory):
         hdr = hdul[0].header
         
         # Replace properties in header
-        hdr.set("ORIGFILE","MEDIAN_"+ "-" +directory.split("/")[-2].replace(',','').upper()
+        directory = directory.replace('\\','/')
+        hdr.set("ORIGFILE","MEDIAN_" +directory.split("/")[-2].replace(',','').upper()
                 + "-" +directory.split("/")[-1].upper()+".fits")
         
         hdul[0].header = hdr
@@ -90,7 +94,7 @@ def save_median_to_file(directory):
 def save_master_dark_to_file(directory):
     """
     Saves the master dark in the given directory.
-    The median dark must be contained in directory.
+    The median dark must be contained in directory, else, does nothing.
 
     Parameters
     ----------
@@ -100,20 +104,23 @@ def save_master_dark_to_file(directory):
     """
     # Copy of median
     for f in os.listdir(directory):
-        if "median" in f: 
+        if "median.fits" in f: 
             input_file = os.path.join(directory, f)
             with fits.open(input_file) as hdul:
                 hdul.writeto(directory + "/master.fits",output_verify='silentfix',overwrite=True)
             break
         
     master = os.path.join(directory,"master.fits")
+    if not os.path.exists(master): return
+    
     with fits.open(master,mode="update") as hdul:
         # Set median image as data
         hdr = hdul[0].header
         
         # Replace properties in header
-        hdr.set("ORIGFILE","MASTER_"+ "-" +directory.split("/")[-3].replace(',','').upper()
-                + "-" +directory.split("/")[-2].upper()+".fits")
+        directory = directory.replace('\\','/')
+        hdr.set("ORIGFILE","MASTER_" +directory.split("/")[-4].replace(',','').upper()
+                + "-" +directory.split("/")[-3].upper()+".fits")
         
         hdul[0].header = hdr
 
@@ -133,11 +140,13 @@ def get_corresponding_dark(directory):
         The path to the master dark of same time.
 
     """
-    time = directory.split('/')[-2]
-    flat = directory.split('/')[-3]
+    directory = directory.replace('\\','/')
+    filters = directory.split('/')[-2]
+    time = directory.split('/')[-3]
+    flat = directory.split('/')[-4]
     
-    directory= directory.removesuffix(flat+"/"+time+"/master")
-    directory += "DARK/" + time + "/master/master.fits"
+    directory= directory.removesuffix(flat+"/"+time+"/"+filters+"/master")
+    directory += "DARK/" + time + "/closed,NB_2.17,NB_1.08,/master/master.fits"
     
     path = os.path.join(directory)
     if not os.path.exists(path): 
@@ -147,9 +156,8 @@ def get_corresponding_dark(directory):
     
 def get_corresponding_masters(directory):
     """
-    Returns the string paths to the master dark/flat of same integration time.
-    If no flat is found, another master flat will be used.
-    Returns None if files don't exist.
+    Returns the string paths to the master dark/flat of same integration time/filter.
+    Returns None if any file doesn't exist.
 
     Parameters
     ----------
@@ -162,22 +170,27 @@ def get_corresponding_masters(directory):
         The paths to the master dark and flat of same time.
 
     """
-    time = directory.split('/')[-2]
-    star = directory.split('/')[-3]
+    # Getting info
+    directory = directory.replace('\\', '/')
+    filters = directory.split('/')[-2]
+    time = directory.split('/')[-3]
+    star = directory.split('/')[-4]
     
     # Dir names
-    directory = directory.removesuffix(star+"/"+time+"/"+directory.split('/')[-1])
-    dark = directory + "DARK/" + time + "/master/master.fits"
-    flat = directory + "FLAT,SKY/" + time + "/master/master.fits"
+    directory = directory.removesuffix(star+"/"+time+"/"+filters+"/"+directory.split('/')[-1])
+    dark = directory + "DARK/" + time + "/closed,NB_2.17,NB_1.08,/master/master.fits"
+    # Checking in other folders for same filter
+    t_flat = directory + "FLAT,SKY"
+    if not os.path.exists(t_flat): return None,None
+    for time in os.listdir(t_flat):
+        flat = directory + "FLAT,SKY/" + time + "/" + filters + "/master/master.fits"
+        if os.path.exists(flat):
+            break
     
+        
     # If paths exist
     if os.path.exists(dark) and os.path.exists(flat): 
         return dark,flat
-    elif os.path.exists(dark):
-        for f in os.listdir(directory + "FLAT,SKY"):
-            flat = directory + "FLAT,SKY/" + f + "/master/master.fits"
-            if os.path.exists(flat): 
-                return dark,flat
     return None, None
    
 def save_master_flat_to_file(directory):
@@ -194,7 +207,7 @@ def save_master_flat_to_file(directory):
     """
     # Copy of median
     for f in os.listdir(directory):
-        if "median" in f: 
+        if "median.fits" in f: 
             input_file = os.path.join(directory, f)
             with fits.open(input_file) as hdul:
                 hdul.writeto(directory + "/master.fits",output_verify='silentfix',overwrite=True)
@@ -202,11 +215,11 @@ def save_master_flat_to_file(directory):
     
     # Get flat path
     flat = os.path.join(directory,"master.fits")
+    if not os.path.exists(flat): return
     
     # Get dark path
     dark = get_corresponding_dark(directory)
-    if dark is None:
-        return
+    if dark is None: return
     
     
     # Opens master flat
@@ -234,8 +247,8 @@ def save_master_flat_to_file(directory):
 def save_clean_images(file):
     """
     Saves the cleaned datacube after correcting biases with a master dark and a master flat.
-    The median flat must be contained in directory.
-    If no corresponding dark .fits file exists, the operation is cancelled.
+    If no corresponding dark and flat .fits files exist, the operation is cancelled.
+    The dark must be of same integration time, the flat of same filter.
 
     Parameters
     ----------
@@ -243,10 +256,12 @@ def save_clean_images(file):
         Path to the datacube.
 
     """
+    file = file.replace("\\","/")
     dark,flat = get_corresponding_masters(file)
     
     # If files not found, cancel
     if dark is None or flat is None:
+        print("No Corresponding flat/dark found for " + file)
         return
     
     # Create an export folder if not exist
@@ -262,13 +277,15 @@ def save_clean_images(file):
                                ,output_verify='silentfix',overwrite=True)
     
     # Open export
-    with fits.open(exp_path+"/"+file.split('/')[-1]) as hdul_l:
+    with fits.open(exp_path+"/"+file.split('/')[-1],mode='update') as hdul_l:
         img_l = hdul_l[0].data
         hdr = hdul_l[0].header
         
         # Replace properties in header
-        hdr.set("ORIGFILE","UNBIASED_"+ "-" +file.split("/")[-3].replace(',','').upper()
-                + "-" +file.split("/")[-2].upper()+".fits")
+        hdr.set("ORIGFILE","CLEAN_" +file.split("/")[-4].upper()
+                + "-" +file.split("/")[-3].upper()
+                + "-" +file.split("/")[-2].upper()
+                +".fits")
         
         # Getting master dark and flat images
         with fits.open(dark) as hdul_d:
@@ -276,9 +293,70 @@ def save_clean_images(file):
         with fits.open(flat) as hdul_f:
             img_f = hdul_f[0].data
     
+        # Cropping images
+        dx,dy = np.shape(img_d)
+        c_img_d = img_d[int(dx/2)-68:int(dx/2)+69 , int(dy/2)-64:int(dy/2)+65]
+        dx,dy = np.shape(img_f)
+        c_img_f = img_f[int(dx/2)-68:int(dx/2)+68 , int(dy/2)-64:int(dy/2)+64]
+    
         # For every frame of the datacube
-        for i in range(np.shape(img_l)[0]):
-            img_l[i,:,:] = (img_l[i,:,:] - img_d)/img_f
+        c_img_d = np.repeat(c_img_d[np.newaxis,:,:],np.shape(img_l)[0],axis=0)
+        c_img_f = np.repeat(c_img_f[np.newaxis,:,:],np.shape(img_l)[0],axis=0)
+        
+        img_l = (img_l - c_img_d)/c_img_f
+        
+        # plt.figure()
+        # plt.imshow(c_img_d[0,:,:])
+        # plt.figure()
+        # plt.imshow(c_img_f[0,:,:])
+        # plt.figure()
+        # plt.imshow(img_l[0,:,:])
+        # plt.figure()
+        # plt.imshow(hdul_l[0].data[0])
+        # plt.show()
             
         hdul_l[0].header = hdr
         hdul_l[0].data = img_l
+        
+
+def iterate_over_tree(main, key, method):
+    """
+    Applies the method on every folder named after key or inside, starting from main
+    
+    Parameters
+    ----------
+    main: str
+        Path to the starting folder
+        
+    key: str
+        Which folder should the method be applied to
+    
+    method: func
+        A function that applies on a given folder path
+    
+    """
+    
+    for f in os.listdir(main):
+        path = os.path.join(main,f)
+        
+        if os.path.isdir(path):
+            if key in path:
+                method(path)
+            # Recursive call when dir encountered
+            iterate_over_tree(path, key, method)
+     
+        
+def clean_all(path):
+    '''TODO'''
+
+main = "C:/Users/timde/Documents/Stage/" 
+folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
+master = ["DARK","SKY","FLAT,SKY"]
+
+for f in folders:
+    # for m in master:
+    #     iterate_over_tree(main+f,m,save_median_to_file)
+    # iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
+    # iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
+    # iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
+    

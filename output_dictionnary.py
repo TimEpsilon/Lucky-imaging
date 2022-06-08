@@ -179,10 +179,10 @@ home = Path.home()
 # save_file(directory)
 
 main_folder = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-main_path = "/home/tdewacher/Documents/Stage/"
+main_path = "C:/Users/timde/Documents/Stage/"
 
 # for folder in main_folder:
-    # remove_empty_folders(main_path + folder)
+#     remove_empty_folders(main_path + folder)
     # move_to_main_folder(main_path + folder, main_path + folder)
 
 #Example for nice plots

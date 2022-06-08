@@ -104,7 +104,6 @@ def apply_filters_to_parent(filename,parent):
     """
     for f in os.listdir(parent):
         if ".fits" in f:
-            print(f)
             move_by_filter(filename, parent)
         else:
             child = os.path.join(parent, f)
@@ -124,7 +123,6 @@ def move_by_filter(filename,location):
         The path to the folder containing the dataset.
         
     """
-    print(location)
     # Dataframe creation
     f_list = pd.read_csv(filename,sep=';')
     
@@ -189,42 +187,42 @@ main_folder = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
 image_type = ["DARK","FLAT,SKY","FLAT,LAMP","SKY","STD"]
 image_name = ["Betelgeuse","Aldebaran","31_Ori"]
 master_type = ["DARK","SKY","FLAT,SKY"]
-main_path = "/home/tdewacher/Documents/Stage"
+main_path = "C:/Users/timde/Documents/Stage"
 
 
-for folder in main_folder:
+# for folder in main_folder:
     
-    # Move and subdivide by name
-    for iname in image_name:
-        move_by_name(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+iname, iname)
-        subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+iname)
+    # # Move and subdivide by name
+    # for iname in image_name:
+    #     move_by_name(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+iname, iname)
+    #     subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+iname)
         
         
     
-    # Move and subdivide by type
-    for itype in image_type:
-        move_by_type(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+itype, itype)
-        subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+itype)
+    # # Move and subdivide by type
+    # for itype in image_type:
+    #     move_by_type(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+itype, itype)
+    #     subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+itype)
         
     # Move by filters
-    apply_filters_to_parent(folder+"_Output.csv", main_path+"/"+folder)
+    # apply_filters_to_parent(main_path + "/" + folder+"_Output.csv", main_path+"/"+folder)
         
     
-    for master in master_type:
-        # Create median file
-        if not os.path.exists(main_path + "/" + folder + "/" + master): continue
-        for time in os.listdir(main_path + "/" + folder + "/" + master):
-            for exp_path in os.listdir(main_path + "/" + folder + "/" + master + "/" + time):
-                save_median_to_file(main_path + "/" + folder + "/" + master + "/" + time + "/" + exp_path)
-                print(main_path + "/" + folder + "/" + master + "/" + time + "/" + exp_path)
-                master_dir = main_path + "/" + folder + "/" + master + "/" + time + "/" + exp_path + "/master"
-                if not os.path.exists(master_dir): continue
+    # for master in master_type:
+    #     # Create median file
+    #     if not os.path.exists(main_path + "/" + folder + "/" + master): continue
+    #     for time in os.listdir(main_path + "/" + folder + "/" + master):
+    #         for exp_path in os.listdir(main_path + "/" + folder + "/" + master + "/" + time):
+    #             save_median_to_file(main_path + "/" + folder + "/" + master + "/" + time + "/" + exp_path)
+    #             print(main_path + "/" + folder + "/" + master + "/" + time + "/" + exp_path)
+    #             master_dir = main_path + "/" + folder + "/" + master + "/" + time + "/" + exp_path + "/master"
+    #             if not os.path.exists(master_dir): continue
             
-                # Create master dark and sky
-                if master != "FLAT,SKY":
-                    save_master_dark_to_file(master_dir)
+    #             # Create master dark and sky
+    #             if master != "FLAT,SKY":
+    #                 save_master_dark_to_file(master_dir)
         
-                else:
-                    save_master_flat_to_file(master_dir)
+    #             else:
+    #                 save_master_flat_to_file(master_dir)
                  
 # save_clean_images("/home/Documents/Stage/P94-2014-2015/Betelgeuse/0.008717/NACO.2015-02-07T01_04_31.326.fits")
