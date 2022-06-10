@@ -34,6 +34,8 @@ def save_file(directory):
         text_file.write("Name;Object;LookingAt;Filter;IsNeutralDensity;IntegrationTime\n")
         
         for f in os.listdir(directory):
+            if "master" in f or "median" in f or "clean" in f:
+                continue
             input_file = os.path.join(directory, f)
                 
             # Getting the data
@@ -85,6 +87,8 @@ def get_dataframe_from_folder(directory):
     df = pd.DataFrame({"Name":[],"Object":[],"LookingAt":[],"Filter":[],"IsNeutralDensity":[],"IntegrationTime":[]})
     
     for f in os.listdir(directory):
+        if "master" in f or "median" in f or "clean" in f:
+            continue
         input_file = os.path.join(directory, f)
         
         if ".fits" not in f:
@@ -152,7 +156,7 @@ def move_to_main_folder(directory,main):
     """
     
     if ".fits" in directory:
-        os.rename(directory, main + directory.split('/')[-1])
+        os.rename(directory, main + "/" + directory.split('/')[-1])
         return
     
     for f in os.listdir(directory):
@@ -164,26 +168,27 @@ def move_to_main_folder(directory,main):
 
 
 home = Path.home() 
+print(home)
 
 
-# directory = Path(home, "Documents/Stage/P94-2014-2015")
-# save_file(directory)
+directory = Path(home, "Documents/Stage/P94-2014-2015")
+save_file(directory)
 
-# directory = Path(home, "Documents/Stage/P82-2008-2009")
-# save_file(directory)
+directory = Path(home, "Documents/Stage/P82-2008-2009")
+save_file(directory)
     
-# directory = Path(home, "Documents/Stage/P88-2011-2012")
-# save_file(directory)
+directory = Path(home, "Documents/Stage/P88-2011-2012")
+save_file(directory)
 
-# directory = Path(home, "Documents/Stage/P90-2012-2013")
-# save_file(directory)
+directory = Path(home, "Documents/Stage/P90-2012-2013")
+save_file(directory)
 
 main_folder = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-main_path = "C:/Users/timde/Documents/Stage/"
+main_path = "/home/tdewacher/Documents/Stage/"
 
 # for folder in main_folder:
+#     # move_to_main_folder(main_path + folder, main_path + folder)
 #     remove_empty_folders(main_path + folder)
-    # move_to_main_folder(main_path + folder, main_path + folder)
 
 #Example for nice plots
 # fov = hdr['CD2_2']*hdr['NAXIS2']/2

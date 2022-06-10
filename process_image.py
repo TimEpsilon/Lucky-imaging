@@ -9,6 +9,7 @@ import pandas as pd
 import os
 from astropy.io import fits
 import matplotlib.pyplot as plt
+import datetime
 
 
 def image_median(directory):
@@ -191,6 +192,10 @@ def get_corresponding_masters(directory):
     # If paths exist
     if os.path.exists(dark) and os.path.exists(flat): 
         return dark,flat
+    elif os.path.exists(dark):
+        return dark,None
+    elif os.path.exists(flat):
+        return None,flat
     return None, None
    
 def save_master_flat_to_file(directory):
@@ -244,7 +249,7 @@ def save_master_flat_to_file(directory):
         hdul[0].header = hdr  
 
 
-def save_clean_images(file):
+def save_clean_images(file,text_file):
     """
     Saves the cleaned datacube after correcting biases with a master dark and a master flat.
     If no corresponding dark and flat .fits files exist, the operation is cancelled.
@@ -259,9 +264,14 @@ def save_clean_images(file):
     file = file.replace("\\","/")
     dark,flat = get_corresponding_masters(file)
     
+    #######
+    filters = file.split('/')[-2]
+    time = file.split('/')[-3]
+    text_file.write(file[33:]+";"+filters+";"+time+";"+str(not dark is None)+";"+str(not flat is None)+"\n")
+    #######
+    
     # If files not found, cancel
     if dark is None or flat is None:
-        print("No Corresponding flat/dark found for " + file)
         return
     
     # Create an export folder if not exist
@@ -273,11 +283,11 @@ def save_clean_images(file):
     
     # Copy of datacube
     with fits.open(file) as hdul_l:
-        hdul_l.writeto(exp_path + "/" + file.split('/')[-1]
+        hdul_l.writeto(exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits"
                                ,output_verify='silentfix',overwrite=True)
     
     # Open export
-    with fits.open(exp_path+"/"+file.split('/')[-1],mode='update') as hdul_l:
+    with fits.open(exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits",mode='update') as hdul_l:
         img_l = hdul_l[0].data
         hdr = hdul_l[0].header
         
@@ -287,6 +297,9 @@ def save_clean_images(file):
                 + "-" +file.split("/")[-2].upper()
                 +".fits")
         
+        hdr.set("HIERARCH ESO DPR TYPE",'CLEAN')
+        hdr.set("HISTORY", datetime.date.today().ctime().replace(':','-') + " - Created file")
+        
         # Getting master dark and flat images
         with fits.open(dark) as hdul_d:
             img_d = hdul_d[0].data
@@ -295,9 +308,10 @@ def save_clean_images(file):
     
         # Cropping images
         dx,dy = np.shape(img_d)
-        c_img_d = img_d[int(dx/2)-68:int(dx/2)+69 , int(dy/2)-64:int(dy/2)+65]
+        Dx,Dy = np.shape(img_l[0,:,:])
+        c_img_d = img_d[int(dx/2-Dx/2):int(dx/2+Dx/2+1) , int(dy/2-Dy/2):int(dy/2+Dy/2+1)]
         dx,dy = np.shape(img_f)
-        c_img_f = img_f[int(dx/2)-68:int(dx/2)+68 , int(dy/2)-64:int(dy/2)+64]
+        c_img_f = img_f[int(dx/2-Dx/2):int(dx/2+Dx/2) , int(dy/2-Dy/2):int(dy/2+Dy/2)]
     
         # For every frame of the datacube
         c_img_d = np.repeat(c_img_d[np.newaxis,:,:],np.shape(img_l)[0],axis=0)
@@ -346,17 +360,34 @@ def iterate_over_tree(main, key, method):
             iterate_over_tree(path, key, method)
      
         
-def clean_all(path):
-    '''TODO'''
+def clean_all(path,text_file):
+    '''
+    Cleans every possible .fits file in a given star directory
 
-main = "C:/Users/timde/Documents/Stage/" 
+    Parameters
+    ----------
+    path : str
+        Path to the star directory.
+    '''
+    for time in os.listdir(path):
+        for filters in os.listdir(path+"/"+time):
+            for file in os.listdir(path+"/"+time+"/"+filters):
+                fpath = os.path.join(path,time,filters,file)
+                if ".fits" in fpath:
+                    save_clean_images(fpath,text_file)
+    
+
+main = "/home/tdewacher/Documents/Stage/" 
 folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-master = ["DARK","SKY","FLAT,SKY"]
+master = ["DARK","FLAT,SKY"]
 
-for f in folders:
-    # for m in master:
-    #     iterate_over_tree(main+f,m,save_median_to_file)
-    # iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
-    # iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
-    # iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
+with open("cleaned_Output.csv", "w") as text_file:
+    text_file.write("Path;Filter;Time;Dark;Flat\n")
+    for f in folders:
+        for m in master:
+            iterate_over_tree(main+f,m,save_median_to_file)
+        iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
+        iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
+        iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
+        clean_all(main+f+"/Betelgeuse",text_file)
     
