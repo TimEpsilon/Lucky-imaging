@@ -274,20 +274,26 @@ def save_clean_images(file,text_file):
     if dark is None or flat is None:
         return
     
+    
+    name = file.split('/')[-1][:-5]
     # Create an export folder if not exist
     exp_path = file.removesuffix(file.split('/')[-1]) + "export" 
     if not os.path.exists(exp_path):
         os.makedirs(exp_path)
         print(exp_path + " created!")
+    glob_exp_path = exp_path + "/" + name
+    if not os.path.exists(glob_exp_path):
+        os.makedirs(glob_exp_path)
+        print(glob_exp_path + " created!")
     
     
     # Copy of datacube
     with fits.open(file) as hdul_l:
-        hdul_l.writeto(exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits"
+        hdul_l.writeto(glob_exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits"
                                ,output_verify='silentfix',overwrite=True)
     
     # Open export
-    with fits.open(exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits",mode='update') as hdul_l:
+    with fits.open(glob_exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits",mode='update') as hdul_l:
         img_l = hdul_l[0].data
         hdr = hdul_l[0].header
         
@@ -384,10 +390,11 @@ master = ["DARK","FLAT,SKY"]
 with open("cleaned_Output.csv", "w") as text_file:
     text_file.write("Path;Filter;Time;Dark;Flat\n")
     for f in folders:
-        for m in master:
-            iterate_over_tree(main+f,m,save_median_to_file)
-        iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
-        iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
-        iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
+        # for m in master:
+        # iterate_over_tree(main+f,m,save_median_to_file)
+        # iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
+        # iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
+        # iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
         clean_all(main+f+"/Betelgeuse",text_file)
+        clean_all(main+f+"/Aldebaran",text_file)
     

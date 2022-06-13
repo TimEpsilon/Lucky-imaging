@@ -19,6 +19,12 @@ import datetime
 from matplotlib.colors import PowerNorm
 
 FWHM_TO_SIGMA = 2*np.sqrt(2*np.log(2))
+R  = '\033[31m' # red
+G  = '\033[32m' # green
+P  = '\033[35m' # purple
+W  = '\033[0m'  # white
+
+plt.close('all')
 
 def align(offset,image):
     """
@@ -55,15 +61,20 @@ def align_datacube(datacube):
         The aligned set of images
 
     '''
-    ref = gauss_map(np.shape(datacube)[1], np.shape(datacube)[2], np.max(datacube[0,:,:]))
+    ti = time.time()
+    n = np.shape(datacube)[0]
+    
+    ref = gauss_map(np.shape(datacube)[2], np.shape(datacube)[1], np.max(datacube[0,:,:]))
     # For every frame
-    for i in range(np.shape(datacube)[0]):
+    for i in range(n):
         datacube[i,:,:] = align(datacube[i,:,:],ref)
+        if i % 500 == 0 and i != 0:
+            print( P + f"Time remaining = {estimate_time(ti,i+1,n)}" + W)
         
     return datacube
 
 def gauss_map(dx,dy,A):
-    Y,X = np.indices()
+    Y,X = np.indices((dx,dy))
     return Gauss2D([X,Y],A,5,dx/2,dy/2,0)
     
 # def radius_map(dx,dy):
@@ -163,6 +174,62 @@ def get_gaussian_to_image(img):
     
     return popt
 
+def save_centered_to_file(path):
+    '''
+    Saves a centered .fits file of the datacube given by path.
+
+    Parameters
+    ----------
+    path : str
+        Path to the .fits file to center.
+    '''
+    # Checking if file exists and valid
+    if not os.path.exists(path) or not ".fits" in path:
+        return
+    
+    # Copy of datacube
+    with fits.open(path) as hdul:
+        hdul.writeto(path.replace("clean", "centered")
+                               ,output_verify='silentfix',overwrite=True)
+    
+    # Open export
+    with fits.open(path.replace("clean", "centered"),mode='update') as hdul:
+        img = hdul[0].data
+        hdr = hdul[0].header
+        
+        # Replace properties in header
+        hdr.set("ORIGFILE",hdr.get("ORIGFILE").replace("CLEAN","CENTERED"))
+        hdr.set("HIERARCH ESO DPR TYPE",'CENTERED')
+        
+        # Replacing hdr, img
+        print("\033[92m"+"Working on : " + path)
+        hdul[0].data = align_datacube(img)
+        hdul[0].header = hdr
+        print(G+ path.replace("clean", "centered") + " saved!\n" + W)
+    return
+
+def estimate_time(start, i, n):
+    '''
+    Estimates the time remaining after elapsed time (corresponding to i images)
+
+    Parameters
+    ----------
+    start : nbr
+        the starting time.
+    i : int
+        current frame.
+    n : int
+        total number of frames.
+
+    Returns
+    -------
+    total : nbr
+        Remaining time.
+
+    '''
+    elapsed = time.time() - start
+    return elapsed * (n-i)/i
+
 def get_fwhm_from_datacube(datacube):
     '''
     Returns an array containing the fwmh from the curve fitted gaussian for every frame of the datacube.
@@ -179,135 +246,185 @@ def get_fwhm_from_datacube(datacube):
         The value of each fwmh corresponding to every frame of the datacube.
 
     '''
-    fwhm = [get_gaussian_to_image(datacube[i,:,:])[1] for i in range(np.shape(datacube)[0])]
-    
-    return fwhm
-
-def get_fwmh_from_datacube_smart(datacube,verbose=False):
-    '''
-    Returns an array containing the fwmh from the curve fitted gaussian for every frame of the datacube.
-    Also aligns the datacube.
-
-    Parameters
-    ----------
-    datacube : 3D array [time,x,y]
-        The set of images to align.
-
-    Returns
-    -------
-    fwhm : array
-        The value of each fwmh corresponding to every frame of the datacube.
-
-    '''
-    fwhm = []
-    # For every frame
     ti = time.time()
-    for i in range(np.shape(datacube)[0]):
-        datacube[i,:,:] = align(datacube[i,:,:],datacube[0,:,:])
-        if verbose and i%100 == 0 : print("Aligning image "+str(i))
-        fwhm.append(get_gaussian_to_image(datacube[i,:,:])[1])
-        if verbose and i%100 == 0: print("Getting the fwhm for " + str(i))
-    tf = time.time()
+    n = np.shape(datacube)[0]
+    fwhm = []
     
-    print(f"Execution time : {tf-ti}")
+    for i in range(n):
+        fwhm.append(abs(get_gaussian_to_image(datacube[i,:,:])[1]))
+        if i % 500 == 0 and i != 0:
+            print(P + f"Time remaining = {estimate_time(ti,i+1,n)}" + W)
     
-    plt.show()
     return fwhm
 
-def get_percent_best(datacube,percent):
+def save_fwhm_to_file(path):
     '''
-    Returns an array containing the indices of the top percent % frames of the datacube.
-    Based on how small the corresponding fwhm is.
+    Saves a .csv file representing a dataframe [frame in datacube, fwhm]
 
     Parameters
     ----------
-    datacube : 3D array [time,x,y]
-        The set of images to align.
-    percent : int
-        % of frames to keep.
-
-    Returns
-    -------
-    indices : array
-        Contains the indices of the best frames in the datacube.
+    path : str
+        The path to the given centered datacube
 
     '''
-    # Sorts and keeps the lowest fwhd
-    fwhm = get_fwmh_from_datacube_smart(datacube,verbose=True)
-    df = pd.DataFrame(fwhm)
-    df = df.sort_values(by=0)
-    return df.index[:int(min(100,percent)/100*len(df))]
+    # Checking if file exists and valid
+    if not os.path.exists(path) or not ".fits" in path:
+        return
+    
+    # Open export
+    with fits.open(path) as hdul:
+        datacube = hdul[0].data
+    
+    name = path[:-5].replace("centered", "fwhm")
+    df = pd.DataFrame(get_fwhm_from_datacube(datacube))
+    df.to_csv(name+".csv")
+    return
 
-def get_mean_image_best(datacube,percent):
-    '''
-    Returns a 2D array representing the mean of percent % best images in the datacube.
-    Based on how small the corresponding fwhm is.
+# def get_fwmh_from_datacube_smart(datacube,verbose=False):
+#     '''
+#     Returns an array containing the fwmh from the curve fitted gaussian for every frame of the datacube.
+#     Also aligns the datacube.
 
-    Parameters
-    ----------
-    datacube : 3D array [time,x,y]
-        The set of images to align.
-    percent : int
-        % of frames to keep.
+#     Parameters
+#     ----------
+#     datacube : 3D array [time,x,y]
+#         The set of images to align.
 
-    Returns
-    -------
-    mean : 2D array
-        Mean image.
+#     Returns
+#     -------
+#     fwhm : array
+#         The value of each fwmh corresponding to every frame of the datacube.
 
-    '''
-    index = get_percent_best(datacube, percent)
-    return np.mean(datacube[index,:,:],axis=0)
+#     '''
+#     fwhm = []
+#     # For every frame
+#     ti = time.time()
+#     for i in range(np.shape(datacube)[0]):
+#         datacube[i,:,:] = align(datacube[i,:,:],datacube[0,:,:])
+#         if verbose and i%100 == 0 : print("Aligning image "+str(i))
+#         fwhm.append(get_gaussian_to_image(datacube[i,:,:])[1])
+#         if verbose and i%100 == 0: print("Getting the fwhm for " + str(i))
+#     tf = time.time()
+    
+#     print(f"Execution time : {tf-ti}")
+    
+#     plt.show()
+#     return fwhm
 
-def save_mean_image_best(name,percent=20):
+# def get_percent_best(datacube,percent):
+#     '''
+#     Returns an array containing the indices of the top percent % frames of the datacube.
+#     Based on how small the corresponding fwhm is.
+
+#     Parameters
+#     ----------
+#     datacube : 3D array [time,x,y]
+#         The set of images to align.
+#     percent : int
+#         % of frames to keep.
+
+#     Returns
+#     -------
+#     indices : array
+#         Contains the indices of the best frames in the datacube.
+
+#     '''
+#     # Sorts and keeps the lowest fwhd
+#     fwhm = get_fwmh_from_datacube_smart(datacube,verbose=True)
+#     df = pd.DataFrame(fwhm)
+#     df = df.sort_values(by=0)
+#     return df.index[:int(min(100,percent)/100*len(df))]
+
+# def get_mean_image_best(datacube,percent):
+#     '''
+#     Returns a 2D array representing the mean of percent % best images in the datacube.
+#     Based on how small the corresponding fwhm is.
+
+#     Parameters
+#     ----------
+#     datacube : 3D array [time,x,y]
+#         The set of images to align.
+#     percent : int
+#         % of frames to keep.
+
+#     Returns
+#     -------
+#     mean : 2D array
+#         Mean image.
+
+#     '''
+#     index = get_percent_best(datacube, percent)
+#     return np.mean(datacube[index,:,:],axis=0)
+
+def save_mean_image(fwhm,centered,percent=20):
     '''
     Saves to file the mean of the given datacube, after selecting the percent % best ones.
 
     Parameters
     ----------
-    name : str
-        Path to the file .fits.
+    fwhm : str
+        Path to the .csv containing the fwhm of each frame
+    centered : str
+        Path to the .fits datacube of each centered frame
     percent : int
         % of frames to keep.
 
     '''
     # Checking if file exists and valid
-    if not os.path.exists(name) or not ".fits" in name:
+    if not os.path.exists(centered) or not ".fits" in centered or not os.path.exists(fwhm) or not ".csv" in fwhm:
         return
     
     # Copy of datacube
-    with fits.open(name) as hdul:
-        hdul.writeto(name.replace("clean", "mean")
+    with fits.open(centered) as hdul:
+        hdul.writeto(centered.replace("centered", "mean")
                                ,output_verify='silentfix',overwrite=True)
     
+    # Open fwhm
+    df = pd.read_csv(fwhm)
+    df = df.sort_values(by="0")
+    # Array of the indices of the best frames
+    fwhm = df.index[:1+int(min(100,percent)/100*len(df))]
+    
     # Open export
-    with fits.open(name.replace("clean", "mean"),mode='update') as hdul:
+    with fits.open(centered.replace("centered", "mean"),mode='update') as hdul:
         img = hdul[0].data
         hdr = hdul[0].header
         
+        # Select and mean of 3D array
+        img = img[fwhm]
+        img = np.mean(img,axis=0)
+        
         # Replace properties in header
-        hdr.set("ORIGFILE",hdr.get("ORIGFILE").replace("CLEAN","MEAN"))
+        hdr.set("ORIGFILE",hdr.get("ORIGFILE").replace("CENTERED","MEAN"))
         hdr.set("HIERARCH ESO DPR TYPE",'MEAN')
-        hdr["HISTORY"] =  [hdr.get("HISTORY"), datetime.date.today().ctime().replace(':','-') + " - Align and mean"]
     
         # Replacing hdr, img
-        print("\033[92m"+"Working on : " + name)
-        hdul[0].data = get_mean_image_best(img, percent)
+        print("\033[92m"+"Working on : " + centered)
+        hdul[0].data = img
         hdul[0].header = hdr
-        print("\033[92m"+ name.replace("clean", "mean") + " saved!")
+        print("\033[92m"+ centered.replace("centered", "mean") + " saved!")
     return
 
 main = "/home/tdewacher/Documents/Stage/" 
 folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
 
+start = time.time()
 for f in folders:
     for obj in os.listdir(main+f):
-        if obj =="ObjectNameNotSet": 
+        if obj !="Aldebaran" and obj != "Betelgeuse": 
             continue
         for times in os.listdir(main+f+"/"+obj):
             for filt in os.listdir(main+f+"/"+obj+"/"+times):
                 if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                    for clean in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                        file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + clean
-                        if "clean" in file:
-                            save_mean_image_best(file)
+                    for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                        if "_bad" in name:
+                            continue
+                        file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name
+                        # print(G + "Centering..." + W)
+                        # save_centered_to_file(file+"/"+name+"_clean.fits")
+                        # print(G + "Getting FWHM..." + W)
+                        # save_fwhm_to_file(file+"/"+name+"_centered.fits")
+                        # print(G + "Meaning..." + W)
+                        # save_mean_image(file+"/"+name+"_fwhm.csv", file+"/"+name+"_centered.fits")
+
+print(G + f"Temps écoulé : {int(time.time() - start)}s" + W)
