@@ -64,13 +64,13 @@ def align_datacube(datacube):
     ti = time.time()
     n = np.shape(datacube)[0]
     
-    ref = gauss_map(np.shape(datacube)[2], np.shape(datacube)[1], np.max(datacube[0,:,:]))
+    ref = gauss_map(np.shape(datacube)[1], np.shape(datacube)[2], np.max(datacube[0,:,:]))
     # For every frame
     for i in range(n):
         datacube[i,:,:] = align(datacube[i,:,:],ref)
         if i % 500 == 0 and i != 0:
             print( P + f"Time remaining = {estimate_time(ti,i+1,n)}" + W)
-        
+    
     return datacube
 
 def gauss_map(dx,dy,A):
@@ -103,7 +103,7 @@ def gauss_map(dx,dy,A):
     
 #     return np.sqrt(X**2 + Y**2)
 
-def Gauss2D(XY,A,fwhm,x0,y0,c):
+def Gauss2D(XY,A,fwhm,y0,x0,c):
     '''
     2D gauss function
 
@@ -168,7 +168,7 @@ def get_gaussian_to_image(img):
     try:
         popt, pcov = curve_fit(Gauss2D_ravel,(x,y),img.ravel(),p0=guess)
     except RuntimeError:
-        print("\033[93m RunTimeError", " Sending back absurd values")
+        print(R + "RunTimeError", " Sending back absurd values" + W)
         popt = [0,1000,0,0,0]
         pass
     
@@ -409,22 +409,21 @@ main = "/home/tdewacher/Documents/Stage/"
 folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
 
 start = time.time()
-for f in folders:
-    for obj in os.listdir(main+f):
-        if obj !="Aldebaran" and obj != "Betelgeuse": 
-            continue
-        for times in os.listdir(main+f+"/"+obj):
-            for filt in os.listdir(main+f+"/"+obj+"/"+times):
-                if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                    for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                        if "_bad" in name:
-                            continue
-                        file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name
-                        # print(G + "Centering..." + W)
-                        # save_centered_to_file(file+"/"+name+"_clean.fits")
-                        # print(G + "Getting FWHM..." + W)
-                        # save_fwhm_to_file(file+"/"+name+"_centered.fits")
-                        # print(G + "Meaning..." + W)
-                        # save_mean_image(file+"/"+name+"_fwhm.csv", file+"/"+name+"_centered.fits")
-
+# for f in folders:
+#     for obj in os.listdir(main+f):
+#         if obj !="Aldebaran" and obj != "Betelgeuse": 
+#             continue
+#         for times in os.listdir(main+f+"/"+obj):
+#             for filt in os.listdir(main+f+"/"+obj+"/"+times):
+#                 if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+#                     for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+#                         if "_bad" in name:
+#                             continue
+#                         file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name
+#                         print(G + "Centering..." + W)
+#                         save_centered_to_file(file+"/"+name+"_clean.fits")
+#                         print(G + "Getting FWHM..." + W)
+#                         save_fwhm_to_file(file+"/"+name+"_centered.fits")
+#                         print(G + "Meaning..." + W)
+#                         save_mean_image(file+"/"+name+"_fwhm.csv", file+"/"+name+"_centered.fits")
 print(G + f"Temps écoulé : {int(time.time() - start)}s" + W)
