@@ -76,21 +76,18 @@ def save_median_to_file(directory):
         if ".fits" in f: 
             input_file = os.path.join(directory, f)
             with fits.open(input_file) as hdul:
-                hdul.writeto(exp_path + "/median.fits",output_verify='silentfix',overwrite=True)
+                # Set median image as data
+                hdr = hdul[0].header
+                
+                # Replace properties in header
+                directory = directory.replace('\\','/')
+                hdr.set("ORIGFILE","MEDIAN_" +directory.split("/")[-2].replace(',','').upper()
+                        + "-" +directory.split("/")[-1].upper()+".fits")
+                
+                # Make copy
+                n_hdul = fits.PrimaryHDU(img,header=hdr)
+                n_hdul.writeto(exp_path + "/median.fits",output_verify='silentfix',overwrite=True)
             break
-        
-    median_file = os.path.join(exp_path,"median.fits")
-    with fits.open(median_file,mode="update") as hdul:
-        # Set median image as data
-        hdul[0].data = img
-        hdr = hdul[0].header
-        
-        # Replace properties in header
-        directory = directory.replace('\\','/')
-        hdr.set("ORIGFILE","MEDIAN_" +directory.split("/")[-2].replace(',','').upper()
-                + "-" +directory.split("/")[-1].upper()+".fits")
-        
-        hdul[0].header = hdr
 
 def save_master_dark_to_file(directory):
     """
@@ -108,22 +105,17 @@ def save_master_dark_to_file(directory):
         if "median.fits" in f: 
             input_file = os.path.join(directory, f)
             with fits.open(input_file) as hdul:
-                hdul.writeto(directory + "/master.fits",output_verify='silentfix',overwrite=True)
-            break
-        
-    master = os.path.join(directory,"master.fits")
-    if not os.path.exists(master): return
-    
-    with fits.open(master,mode="update") as hdul:
-        # Set median image as data
-        hdr = hdul[0].header
-        
-        # Replace properties in header
-        directory = directory.replace('\\','/')
-        hdr.set("ORIGFILE","MASTER_" +directory.split("/")[-4].replace(',','').upper()
-                + "-" +directory.split("/")[-3].upper()+".fits")
-        
-        hdul[0].header = hdr
+                img = hdul[0].data
+                hdr = hdul[0].header
+                
+                # Replace properties in header
+                directory = directory.replace('\\','/')
+                hdr.set("ORIGFILE","MASTER_" +directory.split("/")[-4].replace(',','').upper()
+                        + "-" +directory.split("/")[-3].upper()+".fits")
+                
+                n_hdul = fits.PrimaryHDU(img,header=hdr)
+                n_hdul.writeto(directory + "/master.fits",output_verify='silentfix',overwrite=True)
+            return
 
 def get_corresponding_dark(directory):
     """
@@ -215,38 +207,33 @@ def save_master_flat_to_file(directory):
         if "median.fits" in f: 
             input_file = os.path.join(directory, f)
             with fits.open(input_file) as hdul:
-                hdul.writeto(directory + "/master.fits",output_verify='silentfix',overwrite=True)
-            break
-    
-    # Get flat path
-    flat = os.path.join(directory,"master.fits")
-    if not os.path.exists(flat): return
-    
-    # Get dark path
-    dark = get_corresponding_dark(directory)
-    if dark is None: return
-    
-    
-    # Opens master flat
-    with fits.open(flat,mode="update") as hdul:
-        flat_img = hdul[0].data
-        hdr = hdul[0].header
-        
-        # Opens master dark
-        with fits.open(dark) as hdul1:
-            dark_img = hdul1[0].data
-            
-            # Master flat image
-            master_flat = flat_img - dark_img
-            master_flat /= np.median(master_flat)
-            
-            hdul[0].data = master_flat
-        
-        # Replace properties in header
-        hdr.set("ORIGFILE","MASTER_"+ "-" +directory.split("/")[-3].replace(',','').upper()
-                + "-" +directory.split("/")[-2].upper()+".fits")
-        
-        hdul[0].header = hdr  
+                img = hdul[0].data
+                hdr = hdul[0].header
+                
+                # Get flat path
+                flat = os.path.join(directory,"master.fits")
+                if not os.path.exists(flat): return
+                
+                # Get dark path
+                dark = get_corresponding_dark(directory)
+                if dark is None: return
+                
+                # Opens master dark
+                with fits.open(dark) as hdul1:
+                    dark_img = hdul1[0].data
+                    
+                # Master flat image
+                img = img - dark_img
+                img /= np.median(img)
+                
+                
+                # Replace properties in header
+                hdr.set("ORIGFILE","MASTER_"+ "-" +directory.split("/")[-3].replace(',','').upper()
+                        + "-" +directory.split("/")[-2].upper()+".fits")
+                
+                n_hdul = fits.PrimaryHDU(img,header=hdr)
+                n_hdul.writeto(directory + "/master.fits",output_verify='silentfix',overwrite=True)
+            return
 
 
 def save_clean_images(file,text_file):
@@ -289,11 +276,6 @@ def save_clean_images(file,text_file):
     
     # Copy of datacube
     with fits.open(file) as hdul_l:
-        hdul_l.writeto(glob_exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits"
-                               ,output_verify='silentfix',overwrite=True)
-    
-    # Open export
-    with fits.open(glob_exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits",mode='update') as hdul_l:
         img_l = hdul_l[0].data
         hdr = hdul_l[0].header
         
@@ -325,18 +307,11 @@ def save_clean_images(file,text_file):
         
         img_l = (img_l - c_img_d)/c_img_f
         
-        # plt.figure()
-        # plt.imshow(c_img_d[0,:,:])
-        # plt.figure()
-        # plt.imshow(c_img_f[0,:,:])
-        # plt.figure()
-        # plt.imshow(img_l[0,:,:])
-        # plt.figure()
-        # plt.imshow(hdul_l[0].data[0])
-        # plt.show()
-            
-        hdul_l[0].header = hdr
-        hdul_l[0].data = img_l
+        # Save copy
+        n_hdul_l = fits.PrimaryHDU(img_l,header=hdr)
+        n_hdul_l.writeto(glob_exp_path + "/" + file.split('/')[-1][:-5] + "_clean.fits"
+                               ,output_verify='silentfix',overwrite=True)
+    
         
 
 def iterate_over_tree(main, key, method):
@@ -390,11 +365,11 @@ master = ["DARK","FLAT,SKY"]
 with open("cleaned_Output.csv", "w") as text_file:
     text_file.write("Path;Filter;Time;Dark;Flat\n")
     for f in folders:
-        # for m in master:
-        # iterate_over_tree(main+f,m,save_median_to_file)
-        # iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
-        # iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
-        # iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
+        for m in master:
+            iterate_over_tree(main+f,m,save_median_to_file)
+        iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
+        iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
+        iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
         clean_all(main+f+"/Betelgeuse",text_file)
         clean_all(main+f+"/Aldebaran",text_file)
     

@@ -11,6 +11,7 @@ from astropy.io import fits
 import numpy as np
 import os
 import pandas as pd
+from output_dictionnary import remove_empty_folders
 
 
 def move_by_type(filename,location,destination,callib):
@@ -192,17 +193,20 @@ main_path = "/home/tdewacher/Documents/Stage"
 
 for folder in main_folder:
     
-    # Move and subdivide by name
-    for iname in image_name:
-        move_by_name(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+iname, iname)
-        subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+iname)
+    # # Move and subdivide by name
+    # for iname in image_name:
+    #     print(iname)
+    #     move_by_name(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+iname, iname)
+    #     subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+iname)
         
         
     
-    # Move and subdivide by type
-    for itype in image_type:
-        move_by_type(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+itype, itype)
-        subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+itype)
+    # # Move and subdivide by type
+    # for itype in image_type:
+    #     move_by_type(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+itype, itype)
+    #     subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+itype)
         
-    # Move by filters
-    apply_filters_to_parent(main_path + "/" + folder+"_Output.csv", main_path+"/"+folder)
+    # # Move by filters
+    # apply_filters_to_parent(main_path + "/" + folder+"_Output.csv", main_path+"/"+folder)
+    
+    remove_empty_folders(main_path+"/"+folder)

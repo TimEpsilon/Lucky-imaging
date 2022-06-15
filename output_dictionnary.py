@@ -155,7 +155,7 @@ def move_to_main_folder(directory,main):
 
     """
     
-    if ".fits" in directory:
+    if ".fits" in directory or ".csv" in directory:
         os.rename(directory, main + "/" + directory.split('/')[-1])
         return
     
@@ -187,7 +187,7 @@ main_folder = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
 main_path = "/home/tdewacher/Documents/Stage/"
 
 # for folder in main_folder:
-#     # move_to_main_folder(main_path + folder, main_path + folder)
+#     move_to_main_folder(main_path + folder, main_path + folder)
 #     remove_empty_folders(main_path + folder)
 
 #Example for nice plots
