@@ -15,6 +15,12 @@ import numpy as np
 import pandas as pd
 import os
 
+def not_none(string):
+    if string is None:
+        return "None"
+    else:
+        return str(string)
+
 def save_file(directory):
     """
     Saves the data (Name, Object, Looking at sky/object, Filter used, if a neutral density filter was used) 
@@ -44,8 +50,9 @@ def save_file(directory):
                 
                 for i,row in df.iterrows():
                     
-                    text_file.write(row["Name"] + ";" + row["Object"] + ";" + row["LookingAt"] + ";" 
-                                    + row["Filter"] + ";" + row["IsNeutralDensity"] + ";" + row["IntegrationTime"] + "\n")
+                    text_file.write(row["Name"] + ";" + not_none(row["Object"]) + ";" + not_none(row["LookingAt"]) + ";" 
+                                    + not_none(row["Filter"]) + ";" + not_none(row["IsNeutralDensity"]) + ";" 
+                                    + not_none(row["IntegrationTime"]) + "\n")
                     
                 continue
         
@@ -90,6 +97,7 @@ def get_dataframe_from_folder(directory):
         if "master" in f or "median" in f or "clean" in f:
             continue
         input_file = os.path.join(directory, f)
+        print(input_file)
         
         if ".fits" not in f:
             df_b = get_dataframe_from_folder(input_file)
@@ -171,16 +179,19 @@ home = Path.home()
 print(home)
 
 
-directory = Path(home, "Documents/Stage/P94-2014-2015")
-save_file(directory)
+# directory = Path(home, "Documents/Stage/P94-2014-2015")
+# save_file(directory)
 
-directory = Path(home, "Documents/Stage/P82-2008-2009")
-save_file(directory)
+# directory = Path(home, "Documents/Stage/P82-2008-2009")
+# save_file(directory)
     
-directory = Path(home, "Documents/Stage/P88-2011-2012")
-save_file(directory)
+# directory = Path(home, "Documents/Stage/P88-2011-2012")
+# save_file(directory)
 
-directory = Path(home, "Documents/Stage/P90-2012-2013")
+# directory = Path(home, "Documents/Stage/P90-2012-2013")
+# save_file(directory)
+
+directory = Path(home, "Documents/Stage/2009_to_sort")
 save_file(directory)
 
 main_folder = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]

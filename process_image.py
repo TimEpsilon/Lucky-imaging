@@ -12,6 +12,36 @@ import matplotlib.pyplot as plt
 import datetime
 
 
+def crop_image(img,dx,dy):
+    '''
+    Crops the given image, centered on the middle, to the given dimension.
+    If the image is a datacube (supposed of shape (T,Y,X)), the datacube will be cropped
+
+    Parameters
+    ----------
+    img : 2D/3D array
+        image to crop.
+    dx : int
+        width.
+    dy : int
+        height.
+
+    Returns
+    -------
+    c_img : 2D/3D array
+        The cropped image.
+
+    '''
+    if len(np.shape(img)) == 3:
+        for i in range(np.shape(img)[0]):
+            img[i,:,:] = crop_image(img[i,:,:], dx, dy)
+        return img
+    
+    else:
+        Dy,Dx = np.shape(img)
+    
+        return img[int(Dy/2-dy/2):int(Dy/2+dy/2) , int(Dx/2-dx/2):int(Dx/2+dx/2)]
+
 def image_median(directory):
     """
     Returns the median of every pixel of a given dataset in a directory.
@@ -31,20 +61,32 @@ def image_median(directory):
     median = np.array([])
     
     img_list = []
+    dx = 10000000
+    dy = 10000000
     for f in os.listdir(directory):
-        img_list = []
         input_file = os.path.join(directory, f)
         if ".fits" not in f: continue
         
         with fits.open(input_file) as hdul1:
             img = hdul1[0].data
-            # Only 1s element of 3D arrays
-            if len(np.shape(img)) == 3: img = img[0,:,:]
+            # append each element of 3D arrays
+            if len(np.shape(img)) == 3: 
+                dx = min(dx,np.shape(img[0,:,:])[1])
+                dy = min(dy,np.shape(img[0,:,:])[0])
+                for i in range(np.shape(img)[0]):
+                    img_list.append(img[i,:,:])
+                continue
             # List of images
+            dx = min(dx,np.shape(img)[1])
+            dy = min(dy,np.shape(img)[0])
             img_list.append(img)
             
     # 3D array (image stacking)
     if len(img_list) == 0: return
+    
+    for i in range(len(img_list)):
+        img_list[i] = crop_image(img_list[i], dx, dy)
+        
     median = np.dstack((img_list))
     return np.median(median,axis=2)
 
@@ -64,6 +106,7 @@ def save_median_to_file(directory):
     # Getting the image
     img = image_median(directory)
     if img is None: return
+    
     
     # Create an export folder if not exist
     exp_path = os.path.join(directory,"master")
@@ -147,7 +190,7 @@ def get_corresponding_dark(directory):
     else:
         return directory
     
-def get_corresponding_masters(directory):
+def get_corresponding_masters(directory,flattype):
     """
     Returns the string paths to the master dark/flat of same integration time/filter.
     Returns None if any file doesn't exist.
@@ -172,11 +215,12 @@ def get_corresponding_masters(directory):
     # Dir names
     directory = directory.removesuffix(star+"/"+time+"/"+filters+"/"+directory.split('/')[-1])
     dark = directory + "DARK/" + time + "/closed,NB_2.17,NB_1.08,/master/master.fits"
+    
     # Checking in other folders for same filter
-    t_flat = directory + "FLAT,SKY"
+    t_flat = directory + flattype
     if not os.path.exists(t_flat): return None,None
     for time in os.listdir(t_flat):
-        flat = directory + "FLAT,SKY/" + time + "/" + filters + "/master/master.fits"
+        flat = directory + flattype + time + "/" + filters + "/master/master.fits"
         if os.path.exists(flat):
             break
     
@@ -185,7 +229,11 @@ def get_corresponding_masters(directory):
     if os.path.exists(dark) and os.path.exists(flat): 
         return dark,flat
     elif os.path.exists(dark):
-        return dark,None
+        
+        if os.path.exists(flat):
+            return dark,flat
+        else:
+            return dark,None
     elif os.path.exists(flat):
         return None,flat
     return None, None
@@ -212,7 +260,7 @@ def save_master_flat_to_file(directory):
                 
                 # Get flat path
                 flat = os.path.join(directory,"master.fits")
-                if not os.path.exists(flat): return
+                # if not os.path.exists(flat): return
                 
                 # Get dark path
                 dark = get_corresponding_dark(directory)
@@ -222,6 +270,12 @@ def save_master_flat_to_file(directory):
                 with fits.open(dark) as hdul1:
                     dark_img = hdul1[0].data
                     
+                dx = min(np.shape(img)[-1],np.shape(dark_img)[-1])
+                dy = min(np.shape(img)[-2],np.shape(dark_img)[-2])
+                    
+                img = crop_image(img, dx, dy)
+                dark_img = crop_image(dark_img, dx, dy)
+                
                 # Master flat image
                 img = img - dark_img
                 img /= np.median(img)
@@ -236,9 +290,9 @@ def save_master_flat_to_file(directory):
             return
 
 
-def save_clean_images(file,text_file):
+def save_clean_images(file,text_file=None):
     """
-    Saves the cleaned datacube after correcting biases with a master dark and a master flat.
+    Saves the calibrated datacube after correcting biases with a master dark and a master flat.
     If no corresponding dark and flat .fits files exist, the operation is cancelled.
     The dark must be of same integration time, the flat of same filter.
 
@@ -249,18 +303,21 @@ def save_clean_images(file,text_file):
 
     """
     file = file.replace("\\","/")
-    dark,flat = get_corresponding_masters(file)
+    dark,flat = get_corresponding_masters(file,"FLAT,SKY/")
+    
+    if flat is None:
+        dark,flat = get_corresponding_masters(file,"FLAT,LAMP/")
     
     #######
-    filters = file.split('/')[-2]
-    time = file.split('/')[-3]
-    text_file.write(file[33:]+";"+filters+";"+time+";"+str(not dark is None)+";"+str(not flat is None)+"\n")
+    if text_file is not None:
+        filters = file.split('/')[-2]
+        time = file.split('/')[-3]
+        text_file.write(file[33:]+";"+filters+";"+time+";"+str(not dark is None)+";"+str(not flat is None)+"\n")
     #######
     
     # If files not found, cancel
     if dark is None or flat is None:
         return
-    
     
     name = file.split('/')[-1][:-5]
     # Create an export folder if not exist
@@ -280,7 +337,7 @@ def save_clean_images(file,text_file):
         hdr = hdul_l[0].header
         
         # Replace properties in header
-        hdr.set("ORIGFILE","CLEAN_" +file.split("/")[-4].upper()
+        hdr.set("ORIGFILE","CLEAN" +file.split("/")[-4].upper()
                 + "-" +file.split("/")[-3].upper()
                 + "-" +file.split("/")[-2].upper()
                 +".fits")
@@ -293,19 +350,26 @@ def save_clean_images(file,text_file):
             img_d = hdul_d[0].data
         with fits.open(flat) as hdul_f:
             img_f = hdul_f[0].data
-    
-        # Cropping images
-        dx,dy = np.shape(img_d)
-        Dx,Dy = np.shape(img_l[0,:,:])
-        c_img_d = img_d[int(dx/2-Dx/2):int(dx/2+Dx/2+1) , int(dy/2-Dy/2):int(dy/2+Dy/2+1)]
-        dx,dy = np.shape(img_f)
-        c_img_f = img_f[int(dx/2-Dx/2):int(dx/2+Dx/2) , int(dy/2-Dy/2):int(dy/2+Dy/2)]
-    
-        # For every frame of the datacube
-        c_img_d = np.repeat(c_img_d[np.newaxis,:,:],np.shape(img_l)[0],axis=0)
-        c_img_f = np.repeat(c_img_f[np.newaxis,:,:],np.shape(img_l)[0],axis=0)
+
+        dx = min(np.shape(img_d)[-1],np.shape(img_f)[-1],np.shape(img_l)[-1])
+        dy = min(np.shape(img_d)[-2],np.shape(img_f)[-2],np.shape(img_l)[-2])
         
-        img_l = (img_l - c_img_d)/c_img_f
+        # Cropping images
+        img_d = crop_image(img_d, dx, dy)
+        img_l = crop_image(img_l, dx, dy)
+        img_f = crop_image(img_f, dx, dy)
+        
+        # For every frame of the datacube
+        if len(np.shape(img_l)) == 3:
+            img_d_3d = np.repeat(img_d[np.newaxis,:,:],np.shape(img_l)[0],axis=0)
+            img_f_3d = np.repeat(img_f[np.newaxis,:,:],np.shape(img_l)[0],axis=0)
+        else :
+            img_d_3d = img_d
+            img_f_3d = img_f
+        
+        img_l = (img_l - img_d_3d)
+        
+        img_l[img_f_3d>0.05] /= img_f_3d[img_f_3d>0.05]
         
         # Save copy
         n_hdul_l = fits.PrimaryHDU(img_l,header=hdr)
@@ -335,7 +399,7 @@ def iterate_over_tree(main, key, method):
         path = os.path.join(main,f)
         
         if os.path.isdir(path):
-            if key in path:
+            if key in path.split("/"[-1]):
                 method(path)
             # Recursive call when dir encountered
             iterate_over_tree(path, key, method)
@@ -356,20 +420,69 @@ def clean_all(path,text_file):
                 fpath = os.path.join(path,time,filters,file)
                 if ".fits" in fpath:
                     save_clean_images(fpath,text_file)
-    
+                    
+                    
+def remove_bad_pixel(img,Y,X):
+    print(np.shape(img))
+    for i in range(len(X)):
+        x,y = X[i],Y[i]
+        if len((np.shape(img)))==3:            
+            img[:,y,x] = (img[:,y+1,x] + img[:,y+1,x+1] + img[:,y,x+1] + img[:,y-1,x+1] + img[:,y-1,x] + img[:,y-1,x-1] + img[:,y,x-1] + img[:,y+1,x-1]) / 8 
+        else:
+            img[y,x] = (img[y+1,x] + img[y+1,x+1] + img[y,x+1] + img[y-1,x+1] + img[y-1,x] + img[y-1,x-1] + img[y,x-1] + img[y+1,x-1]) / 8 
+    return img
 
+def bad_pixel_to_file(f):
+    paths = []
+
+    for obj in os.listdir(main+f):
+        if obj != "Betelgeuse" and obj != "Aldebaran": 
+            continue
+        for times in os.listdir(main+f+"/"+obj):
+            for filt in os.listdir(main+f+"/"+obj+"/"+times):
+                if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                    for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                        if "_bad" in name:
+                            continue
+                        file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
+                        paths.append(file)
+                        
+    for path in paths:
+        with fits.open(path+"_clean.fits") as hdul:
+            img = hdul[0].data
+            
+            plt.figure()
+            plt.subplot(1,2,1)
+            plt.imshow(img[0,:,:])
+            
+            good = np.copy(img)
+            good = remove_bad_pixel(good, [50,38,37,31,30,19,15,9,48,47,47,48], [36,46,46,36,36,24,37,33,51,50,51,50])
+            
+            plt.subplot(1,2,2)
+            plt.imshow(good[0,:,:])
+            
+            plt.suptitle(path.split("/")[-1])
+            plt.show()
+            hdul1 = fits.PrimaryHDU(good,header=hdul[0].header)
+        hdul1.writeto(path+"_clean.fits",output_verify='silentfix',overwrite=True)
+        
+        
+        
+        
 main = "/home/tdewacher/Documents/Stage/" 
-folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-master = ["DARK","FLAT,SKY"]
+# folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
+folders = ["P90-2012-2013"]
+master = ["DARK","FLAT,SKY","FLAT,LAMP"]
 
 with open("cleaned_Output.csv", "w") as text_file:
-    text_file.write("Path;Filter;Time;Dark;Flat\n")
+#     text_file.write("Path;Filter;Time;Dark;Flat\n")
     for f in folders:
-        for m in master:
-            iterate_over_tree(main+f,m,save_median_to_file)
-        iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
-        iterate_over_tree(main+f,"SKY",save_master_dark_to_file)
-        iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
+#         for m in master:
+#             iterate_over_tree(main+f,m,save_median_to_file)
+#         iterate_over_tree(main+f,"DARK",save_master_dark_to_file)
+#         iterate_over_tree(main+f,"FLAT,SKY",save_master_flat_to_file)
+#         iterate_over_tree(main+f,"FLAT,LAMP",save_master_flat_to_file)
         clean_all(main+f+"/Betelgeuse",text_file)
         clean_all(main+f+"/Aldebaran",text_file)
-    
+
+bad_pixel_to_file("P90-2012-2013")

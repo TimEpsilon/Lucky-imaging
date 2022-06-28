@@ -11,7 +11,6 @@ from astropy.io import fits
 import numpy as np
 import os
 import pandas as pd
-from output_dictionnary import remove_empty_folders
 
 
 def move_by_type(filename,location,destination,callib):
@@ -183,6 +182,38 @@ def subdivide_by_time(filename,location):
         path = Path(location + "/" + f)
         if not path.is_file(): continue
         os.rename(location + "/" + f, location+ "/" + t + "/" + f)
+        
+def ignore_flat_off(path):
+    '''
+    Some flats using the lamp are taken by pair flat on/flat off. Those do not mix well and end up causing division by 0.
+    This method moves every flat off to an "off" folder, starting from path
+
+    Parameters
+    ----------
+    path : str
+        The epoch root to start in.
+    '''
+    path = path + "/FLAT,LAMP/"
+    
+    for time in os.listdir(path):
+        for filters in os.listdir(path+time):
+            folder = path + time + "/" + filters + "/"
+            
+            off = []
+            for f in os.listdir(folder):
+                if not ".fits" in f: continue
+                with fits.open(folder+f) as hdul:
+                    hdr = hdul[0].header
+                    if hdr["HIERARCH ESO INS LAMP2 CURRENT"] == 0:
+                        off.append(f)
+    
+            if not os.path.exists(folder+"off"):
+                os.mkdir(folder+"off")
+                print(path+"off created!")
+                
+            for f in off:
+                os.rename(folder+f,folder+"off/"+f)
+
 
 
 main_folder = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
@@ -195,7 +226,6 @@ for folder in main_folder:
     
     # # Move and subdivide by name
     # for iname in image_name:
-    #     print(iname)
     #     move_by_name(folder+"_Output.csv", main_path+"/"+folder, main_path+"/"+folder+"/"+iname, iname)
     #     subdivide_by_time(folder+"_Output.csv", main_path+"/"+folder+"/"+iname)
         
@@ -209,4 +239,6 @@ for folder in main_folder:
     # # Move by filters
     # apply_filters_to_parent(main_path + "/" + folder+"_Output.csv", main_path+"/"+folder)
     
-    remove_empty_folders(main_path+"/"+folder)
+    ignore_flat_off(main_path+"/"+folder)
+    
+    # remove_empty_folders(main_path+"/"+folder)
