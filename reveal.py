@@ -38,7 +38,7 @@ plt.close('all')
     
 main = "/home/tdewacher/Documents/Stage/" 
 # folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-folders = ["P90-2012-2013"]
+folders = ["P94-2014-2015"]
 
 start = time.time()
 df = pd.DataFrame(data={"path":[],"epoch":[],"filter":[],"type":[]})
@@ -64,7 +64,7 @@ for f in folders:
     n = len(filters)
     if n == 0: continue
     
-    fig1,ax1 = plt.subplots(2,n)
+    fig1,ax1 = plt.subplots(3,n)
     
     
     
@@ -96,17 +96,17 @@ for f in folders:
         plt.show(block=False)
         
         
-        # j = int(input("Betelgeuse id : "))
+        j = int(input("Betelgeuse id : "))
         
-        # with fits.open(betelgeuse["path"].to_numpy()[j]+"_mean.fits") as hdul:
-        #     ax1[0,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
-        #     ax1[0,i].set_title("Betelg - " + filt)
+        with fits.open(betelgeuse["path"].to_numpy()[j]+"_mean.fits") as hdul:
+            ax1[0,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
+            ax1[0,i].set_title("Betelg - " + filt)
             
-        # j = int(input("Aldebaran id : "))
+        j = int(input("Aldebaran id : "))
          
-        # with fits.open(aldebaran["path"].to_numpy()[j]+"_mean.fits") as hdul:
-        #     ax1[1,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
-        #     ax1[1,i].set_title("Aldeb - " + filt)
+        with fits.open(aldebaran["path"].to_numpy()[j]+"_mean.fits") as hdul:
+            ax1[1,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
+            ax1[1,i].set_title("Aldeb - " + filt)
             
     
     plt.show()

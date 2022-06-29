@@ -44,7 +44,7 @@ def align(offset,image):
     corrected : 2D array
         The offset image after alignement with image
     """
-    xoff, yoff, exoff, eyoff = chi2_shift(image, offset)
+    xoff, yoff, exoff, eyoff = chi2_shift(image, offset,upsample_factor=3)
     
     return shift.shiftnd(offset,[-yoff,-xoff])
 
@@ -293,7 +293,7 @@ def save_fwhm_to_file(path):
     df.to_csv(name+".csv")
     return
 
-def save_mean_image(fwhm,centered,percent=15):
+def save_mean_image(fwhm,centered,percent=10):
     '''
     Saves to file the mean of the given datacube, after selecting the percent % best ones.
 
@@ -322,10 +322,13 @@ def save_mean_image(fwhm,centered,percent=15):
         img = hdul[0].data
         hdr = hdul[0].header
         
-        if len(np.shape(img)) == 3:
+        if len(np.shape(img)) == 3 and np.shape(img)[0] != 1:
             # Select and mean of 3D array
             img = img[fwhm]
             img = np.mean(img,axis=0)
+            
+        elif np.shape(img)[0] == 1:
+            img = img[0,:,:]
         
         # Replace properties in header
         hdr.set("ORIGFILE",hdr.get("ORIGFILE").replace("CENTERED","MEAN"))
@@ -391,6 +394,7 @@ for f in folders:
             for filt in os.listdir(main+f+"/"+obj+"/"+times):
                 if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
                     for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                        
                         if "_bad" in name:
                             continue
                         file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
@@ -430,18 +434,18 @@ for f in folders:
             
 
 
-print(B + f"{len(clean_list)} files to work on" + W)
+# print(B + f"{len(clean_list)} files to work on" + W)
 
-for i in range(len(clean_list)):
-    f = clean_list[i]
-    if os.path.exists(f+"_mean.fits"):
-        continue
-    print(B + f"{i+1}/{len(clean_list)} \n" + W)
-    print(G + "Centering..." + W)
-    # save_centered_to_file(f+"_clean.fits")
-    print(G + "Getting FWHM..." + W)
-    # save_fwhm_to_file(f+"_centered.fits")
-    print(G + "Meaning..." + W)
-    save_mean_image(f+"_fwhm.csv", f+"_centered.fits")
+# for i in range(len(clean_list)):
+#     f = clean_list[i]
+#     if os.path.exists(f+"_mean.fits"):
+#         continue
+#     print(B + f"{i+1}/{len(clean_list)} \n" + W)
+#     print(G + "Centering..." + W)
+#     # save_centered_to_file(f+"_clean.fits")
+#     print(G + "Getting FWHM..." + W)
+#     # save_fwhm_to_file(f+"_centered.fits")
+#     print(G + "Meaning..." + W)
+#     save_mean_image(f+"_fwhm.csv", f+"_centered.fits")
 
-print(G + f"Temps écoulé : {int(time.time() - start)}s" + W)
+# print(G + f"Temps écoulé : {int(time.time() - start)}s" + W)

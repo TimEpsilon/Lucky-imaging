@@ -16,6 +16,7 @@ from astropy.io import fits
 from pyraf.iraf import stsdas
 from scipy.signal import convolve2d
 import time
+import pandas as pd
 from scipy.optimize import curve_fit
 stsdas()
 stsdas.analysis()
@@ -32,7 +33,7 @@ FWHM_TO_SIGMA = 2*np.sqrt(2*np.log(2))
 plt.close('all')
 
 def gauss_map(dx,dy,s):
-    X,Y = np.indices((dx,dy))
+    X,Y = np.indices((dx,dy),dtype=float)
     return np.exp(-((X-dx/2)**2 + (Y-dy/2)**2)/(2*s**2))
 
 def crop_image(img,dx,dy):
@@ -93,12 +94,12 @@ def save_normalized_copy(psf,n_img):
         img = crop_image(img, dx, dy)
         n_img = crop_image(n_img, dx, dy)
         
-        img[img<0]=0
-        img[n_img<=0]=0
+        img[img<0]=np.min(img[img>0])
+        img[n_img<=0]=np.min(img[img>0])
         
         # Apodizing
         x,y = np.shape(hdul[0].data)
-        gauss = gauss_map(x,y,10/FWHM_TO_SIGMA)
+        gauss = gauss_map(x,y,20)
         img *= gauss
         img /= hdul[0].data.sum()
         
@@ -110,7 +111,7 @@ def save_normalized_copy(psf,n_img):
         print(G + "Copy of " + psf + W)      
     return
 
-def save_pos_copy(path):
+def save_pos_copy(path,psf):
     '''
     Saves a copy of the given image, after setting any negative value to 0
 
@@ -124,18 +125,26 @@ def save_pos_copy(path):
     with fits.open(path) as hdul:
         img = hdul[0].data
         hdr = hdul[0].header
+    
+    with fits.open(psf) as hdul:
+        n_img = hdul[0].data
         
-        img_min=0
-        img[img<0] = np.min(img[img>0])
+    dx = min(np.shape(n_img)[-1],np.shape(img)[-1])
+    dy = min(np.shape(n_img)[-2],np.shape(img)[-2])
+    
+    img = crop_image(img, dx, dy)
         
-        n_hdul = fits.PrimaryHDU(img,header=hdr)
-        n_hdul.writeto(path.replace("mean","norm")
-                               ,output_verify='silentfix',overwrite=True)
-        print(G + "Copy of " + path + W)      
+    img_min=0
+    img[img<0] = np.min(img[img>0])
+    
+    n_hdul = fits.PrimaryHDU(img,header=hdr)
+    n_hdul.writeto(path.replace("mean","norm")
+                           ,output_verify='silentfix',overwrite=True)
+    print(G + "Copy of " + path + W)      
     return img_min
 
 
-def deconvolution(img,psf,n=30,img_min=0):
+def deconvolution(img,psf,n=15,img_min=0):
     '''
     Attempts a deconvolution on img using a given psf.
 
@@ -152,10 +161,10 @@ def deconvolution(img,psf,n=30,img_min=0):
     if os.path.exists(img.replace("norm","deconvolution")):
         os.remove(img.replace("norm","deconvolution"))
     stsdas.analysis.restore.lucy(img, psf, img.replace("norm","deconvolution"), 40, 0,
-                                 niter=n, limchisq=1e-10,verbose=False,background=-img_min,nsave=5)
+                                 niter=n, limchisq=1e-10,verbose=False,nsave=5)
     return
 
-def get_matching_psf(path,choice=False):
+def get_matching_psf(path):
     '''
     Returns the path to corresponding Aldebaran mean image, if it exists.
 
@@ -173,6 +182,13 @@ def get_matching_psf(path,choice=False):
     '''
     corr_path = None
     filt = path.split('/')[-4]
+    
+    deconv_match = path[:-len(path.split('/')[-1])] + "deconvolution_match.txt"
+    if os.path.exists(deconv_match) :
+        with open(deconv_match,"r") as read_file:
+            corr_path = read_file.readlines()[0]
+            return corr_path
+    
     ald_path = path[:-len(path.split('/')[-6] + "/" +
                                  path.split('/')[-5] + "/" +
                                  path.split('/')[-4] + "/" +
@@ -192,7 +208,7 @@ def get_matching_psf(path,choice=False):
     if len(good_list) == 0:
         return
     
-    if len(good_list) == 1 or choice:
+    if len(good_list) == 1:
         corr_path = good_list[0]
         print(G + "Path found ! " + corr_path + W)
         return corr_path
@@ -219,6 +235,10 @@ def get_matching_psf(path,choice=False):
     
     corr_path = good_list[_id]
     print(G + "Path found ! " + corr_path + W)
+    
+    with open(deconv_match,"w") as write_file:
+        write_file.write(corr_path)
+            
     return corr_path
 
 def apply_deconvolution(path):
@@ -238,7 +258,7 @@ def apply_deconvolution(path):
         return
     
     # Creating positive img
-    img_min = save_pos_copy(path)
+    img_min = save_pos_copy(path,psf_path)
     
     # Getting img
     with fits.open(path.replace("mean","norm")) as img:
@@ -256,26 +276,34 @@ def apply_deconvolution(path):
     deconvolution(path.replace("mean","norm"),psf_path.replace("mean","norm"),img_min=img_min)
     
     # Getting deconv
-    with fits.open(path.replace("mean", "deconvolution"),mode="update") as hdul:
-        hdul[0].data += img_min
+    with fits.open(path.replace("mean", "deconvolution"),ignore_missing_end=True) as hdul:
         deconv = hdul[0].data
+        hdr = hdul[0].header
         
-        hdul.flush()
+    deconv += img_min
+    
+    hdul = fits.PrimaryHDU(deconv,header=hdr)
+    hdul.writeto(path.replace("mean", "deconvolution"),overwrite=True,output_verify="silentfix")
     
     reconv = convolve2d(deconv, d_psf,mode='same')
     
-    # fig,ax = plt.subplots(2,2)
+    fig,ax = plt.subplots(2,2)
     
-    # ax[0,0].imshow(d_img,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    # ax[0,0].set_title("Betelgeuse : " + path.split('/')[-2])
-    # ax[1,1].imshow(d_psf,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    # ax[1,1].set_title("Aldebaran " + path.split('/')[-4])
-    # ax[1,0].imshow(deconv,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    # ax[1,0].set_title("Deconvolution")
-    # ax[0,1].imshow(reconv,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    # ax[0,1].set_title("Reconvolution")
+    ax[0,0].imshow(d_img,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
+    ax[0,0].set_title("Betelgeuse : " + path.split('/')[-2])
+    ax[1,1].imshow(d_psf,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
+    ax[1,1].set_title("Aldebaran " + path.split('/')[-4])
+    ax[1,0].imshow(deconv,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
+    ax[1,0].set_title("Deconvolution")
+    ax[0,1].imshow(reconv,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
+    ax[0,1].set_title("Reconvolution")
     
-    # plt.draw()
+    i = 0
+    for f in os.listdir("/home/tdewacher/Images/"):
+        if path.split("/")[-7] + "-" + path.split('/')[-4] + "_" + path.split("/")[-6] in f:
+            i += 1
+    
+    plt.savefig("/home/tdewacher/Images/"+ path.split("/")[-7] + "-" + path.split('/')[-4] + "_" + path.split("/")[-6] + "-" + str(i) + ".png")
     return 
 
 def Gauss2D(XY,A,fwhm,y0,x0,c):
@@ -331,7 +359,7 @@ def getFwhmAndIteration(directory):
     i = []
     fwhm = []
     for f in os.listdir(directory):
-        if "deconvolution" in f:
+        if "deconvolution" in f and ".fits" in f:
             with fits.open(directory+f) as hdul:
                 img = hdul[0].data
                 hdr = hdul[0].header
@@ -342,75 +370,166 @@ def getFwhmAndIteration(directory):
     return i,fwhm
         
 
+def showPlanche(folders):
+    
+    start = time.time()
+    df = pd.DataFrame(data={"path":[],"epoch":[],"filter":[],"type":[]})
+    
+    
+    for f in folders:
+        for obj in os.listdir(main+f):
+            if obj != "Betelgeuse": 
+                continue
+            for times in os.listdir(main+f+"/"+obj):
+                for filt in os.listdir(main+f+"/"+obj+"/"+times):
+                    if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                        for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                            if "_bad" in name:
+                                continue
+                            file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
+                            df = df.append({"path":file,"epoch":f,"filter":filt,"type":obj},ignore_index=True)
+                     
+                            
+    print(B + str(len(df)) + " files to work on" + W)
+    
+    for f in folders:
+        epoch = df[df["epoch"] == f]
+        filters = np.unique(epoch["filter"])
+        n = len(filters)
+        if n == 0: continue
+        
+        fig1,ax1 = plt.subplots(3,n)
+        
+        
+        
+        for i in range(n):
+            filt = filters[i]
+            
+            files = epoch[epoch["filter"] == filt]
+            betelgeuse = files[files["type"] == "Betelgeuse"]
+            
+            m = len(betelgeuse)
+            
+            plt.ion()
+            fig,ax = plt.subplots(3,m)
+            
+            for j in range(m):
+                with fits.open(betelgeuse["path"].to_numpy()[j]+"_mean.fits") as hdul:
+                    ax[0,j].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot")
+                    ax[0,j].set_title(betelgeuse["path"].to_numpy()[j].split('/')[-1][18:])      
+            plt.suptitle(f + " : " + filt)
+            plt.show(block=False)
+            
+            
+            j = int(input("Betelgeuse id : "))
+            
+            with fits.open(betelgeuse["path"].to_numpy()[j]+"_mean.fits") as hdul:
+                ax1[0,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
+                ax1[0,i].set_title("Betelg - " + filt)
+                
+            apply_deconvolution(betelgeuse["path"].to_numpy()[j]+"_mean.fits")
+            
+            psf = get_matching_psf(betelgeuse["path"].to_numpy()[j]+"_mean.fits")
+            
+            if os.path.exists(psf.replace("mean","norm")):
+                with fits.open(psf.replace("mean","norm")) as hdul:
+                    ax1[2,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
+                    ax1[2,i].set_title("Aldeb - " + filt)
+                
+            if os.path.exists(betelgeuse["path"].to_numpy()[j]+"_deconvolution.fits"):
+                with fits.open(betelgeuse["path"].to_numpy()[j]+"_deconvolution.fits") as hdul:
+                    ax1[1,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
+                    ax1[1,i].set_title("Deconvol - " + filt)
+                    
+        
+        plt.show()
+    
+
 
 main = "/home/tdewacher/Documents/Stage/" 
-# folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-folders = ["P82-2008-2009"]
-
-start = time.time()
-clean_list = []
-
-for f in folders:
-    for obj in os.listdir(main+f):
-        if obj != "Betelgeuse": 
-            continue
-        for times in os.listdir(main+f+"/"+obj):
-            for filt in os.listdir(main+f+"/"+obj+"/"+times):
-                if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                    for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                        if "_bad" in name:
-                            continue
-                        file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
-                        clean_list.append(file)
-
-print(B + str(len(clean_list)) + " files to work on" + W)
+folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
 
 
-plt.figure()
-plt.ion()
+showPlanche(folders)
 
-for i in range(len(clean_list)):
-    f = clean_list[i]
+
+
+
+
+# # folders = ["P82-2008-2009"]
+
+# start = time.time()
+# clean_list = []
+
+# for f in folders:
+#     for obj in os.listdir(main+f):
+#         if obj != "Betelgeuse": 
+#             continue
+#         for times in os.listdir(main+f+"/"+obj):
+#             for filt in os.listdir(main+f+"/"+obj+"/"+times):
+#                 if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+#                     for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+#                         if "_bad" in name:
+#                             continue
+#                         file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
+#                         clean_list.append(file)
+
+# print(B + str(len(clean_list)) + " files to work on" + W)
+
+
+# # for i in range(len(clean_list)):
+# #     f = clean_list[i]
     
-    filt = f.split("/")[-4]
-    name = f.split("/")[-1]
+# #     print(G + "Working on " + f + W)
     
-    if os.path.exists(f+"_deconvolution.fits"): continue
+# #     filt = f.split("/")[-4]
+# #     name = f.split("/")[-1]
     
-    # Deconvolution
-    apply_deconvolution(f+"_mean.fits")
-    print(B + str(i+1) + "/" + str(len(clean_list)) + " \n" + W)
+# #     # if os.path.exists(f+"_deconvolution.fits"): continue
     
-    i,fwhm = getFwhmAndIteration(f[:-len(name)])
-    plt.plot(i,fwhm,label=filt)
+# #     # Deconvolution
+# #     apply_deconvolution(f+"_mean.fits")
+# #     print(B + str(i+1) + "/" + str(len(clean_list)) + " \n" + W)
     
-    # # Plot every image
-    # filt = f.split('/')[-4]
-    # epoch = f.split('/')[-7]
-    # with fits.open(f+"_deconvolution.fits") as hdul:
-    #     hdr = hdul[0].header
-    #     img = hdul[0].data
+    
+# #     # Plot every image
+# #     # filt = f.split('/')[-4]
+# #     # epoch = f.split('/')[-7]
+# #     # with fits.open(f+"_deconvolution.fits") as hdul:
+# #     #     hdr = hdul[0].header
+# #     #     img = hdul[0].data
         
-    #     fov = hdr['CD2_2']*hdr['NAXIS2']/2
-    #     fov *= 3600*1000
+# #     #     fov = hdr['CD2_2']*hdr['NAXIS2']/2
+# #     #     fov *= 3600*1000
         
-    #     plt.figure()
-    #     plt.imshow(img,norm=PowerNorm(0.3),cmap="afmhot",origin="lower",
-    #                extent=[fov, -fov, -fov, fov], aspect="equal",interpolation='bicubic')
-    #     plt.colorbar()
-    #     plt.xlabel("Ascension droite relative (mas)")
-    #     plt.ylabel("Declinaison relative (mas)")
-    #     plt.title(epoch + " : " + filt)
+# #     #     plt.figure()
+# #     #     plt.imshow(img,norm=PowerNorm(0.3),cmap="afmhot",origin="lower",
+# #     #                 extent=[fov, -fov, -fov, fov], aspect="equal",interpolation='bicubic')
+# #     #     plt.colorbar()
+# #     #     plt.xlabel("Ascension droite relative (mas)")
+# #     #     plt.ylabel("Declinaison relative (mas)")
+# #     #     plt.title(epoch + " : " + filt)
         
-    #     # Angular diameter
-    #     star = plt.Circle((-fov/np.shape(img)[0],fov/np.shape(img)[1]), 43.7,color='b',fill=False,alpha=0.5)
-    #     ax = plt.gca()
-    #     ax.add_patch(star)
+# #     #     # Angular diameter
+# #     #     star = plt.Circle((-fov/np.shape(img)[0],fov/np.shape(img)[1]), 43.7,color='b',fill=False,alpha=0.5)
+# #     #     ax = plt.gca()
+# #     #     ax.add_patch(star)
         
-    #     plt.draw()
+# #     #     plt.draw()
     
 
-print(G + "Temps écoulé : " + str(int(time.time() - start)) + "s" + W)
+# # print(G + "Temps écoulé : " + str(int(time.time() - start)) + "s" + W)
 
-plt.legend()
-plt.show(block=False)
+# # plt.legend()
+# # plt.show(block=False)
+
+# fig,ax = plt.subplots(1,6)
+# i = 0
+# for sigma in [1,5,10,15,20,30]:
+#     apply_deconvolution("/home/tdewacher/Documents/Stage/P82-2008-2009/Betelgeuse/0.007204/NB_1.26,/export/P82-2008-2009NACO.2009-01-03T02:23:51.357/P82-2008-2009NACO.2009-01-03T02:23:51.357_mean.fits")
+#     with fits.open("/home/tdewacher/Documents/Stage/P82-2008-2009/Betelgeuse/0.007204/NB_1.26,/export/P82-2008-2009NACO.2009-01-03T02:23:51.357/P82-2008-2009NACO.2009-01-03T02:23:51.357_deconvolution.fits") as hdul:
+#         ax[i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot")
+#         ax[i].set_title("sigma : " + str(sigma))
+#         i +=1
+        
+# plt.show()

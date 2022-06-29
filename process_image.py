@@ -471,7 +471,7 @@ def bad_pixel_to_file(f):
         
 main = "/home/tdewacher/Documents/Stage/" 
 # folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-folders = ["P90-2012-2013"]
+folders = ["P94-2014-2015"]
 master = ["DARK","FLAT,SKY","FLAT,LAMP"]
 
 with open("cleaned_Output.csv", "w") as text_file:
@@ -485,4 +485,4 @@ with open("cleaned_Output.csv", "w") as text_file:
         clean_all(main+f+"/Betelgeuse",text_file)
         clean_all(main+f+"/Aldebaran",text_file)
 
-bad_pixel_to_file("P90-2012-2013")
+# bad_pixel_to_file("P90-2012-2013")
