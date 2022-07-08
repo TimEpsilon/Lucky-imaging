@@ -10,6 +10,7 @@ import os
 from astropy.io import fits
 import matplotlib.pyplot as plt
 import datetime
+from matplotlib.colors import PowerNorm
 
 
 def crop_image(img,dx,dy):
@@ -423,7 +424,6 @@ def clean_all(path,text_file):
                     
                     
 def remove_bad_pixel(img,Y,X):
-    print(np.shape(img))
     for i in range(len(X)):
         x,y = X[i],Y[i]
         if len((np.shape(img)))==3:            
@@ -453,13 +453,25 @@ def bad_pixel_to_file(f):
             
             plt.figure()
             plt.subplot(1,2,1)
-            plt.imshow(img[0,:,:])
+            plt.imshow(img[0,:,:],norm=PowerNorm(gamma=0.3))
             
             good = np.copy(img)
-            good = remove_bad_pixel(good, [50,38,37,31,30,19,15,9,48,47,47,48], [36,46,46,36,36,24,37,33,51,50,51,50])
+            
+            
+            #P90
+            # good = remove_bad_pixel(good, [50,38,37,31,30,19,15,9,48,47,47,48], [36,46,46,36,36,24,37,33,51,50,51,50])
+            
+            #P94
+            X = [65,23,22,22,90,90,62,60,66,70,70,76,71]
+            Y = [113,52,52,53,12,13,68,72,79,87,69,61,68]
+            good = remove_bad_pixel(good, Y, X)
+            mask = np.zeros_like(img[0,:,:])
+            for i in range (len(X)):
+                mask[Y[i],X[i]] = 1
+            
             
             plt.subplot(1,2,2)
-            plt.imshow(good[0,:,:])
+            plt.imshow(mask)
             
             plt.suptitle(path.split("/")[-1])
             plt.show()
@@ -485,4 +497,4 @@ with open("cleaned_Output.csv", "w") as text_file:
         clean_all(main+f+"/Betelgeuse",text_file)
         clean_all(main+f+"/Aldebaran",text_file)
 
-# bad_pixel_to_file("P90-2012-2013")
+bad_pixel_to_file("P94-2014-2015")

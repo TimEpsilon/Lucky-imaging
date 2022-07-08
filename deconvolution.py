@@ -18,6 +18,9 @@ from scipy.signal import convolve2d
 import time
 import pandas as pd
 from scipy.optimize import curve_fit
+from SynthPSF import getBand,createSynthPSF
+from test_fit_UD import LDD_1D
+from RotateImage import align_rotation
 stsdas()
 stsdas.analysis()
 stsdas.analysis.restore()
@@ -34,7 +37,7 @@ plt.close('all')
 
 def gauss_map(dx,dy,s):
     X,Y = np.indices((dx,dy),dtype=float)
-    return np.exp(-((X-dx/2)**2 + (Y-dy/2)**2)/(2*s**2))
+    return np.exp(-((X-dx/2+0.5)**2 + (Y-dy/2+0.5)**2)/(2*s**2))
 
 def crop_image(img,dx,dy):
     '''
@@ -67,7 +70,7 @@ def crop_image(img,dx,dy):
         return img[int(Dy/2-dy/2):int(Dy/2+dy/2) , int(Dx/2-dx/2):int(Dx/2+dx/2)]
 
 
-def save_normalized_copy(psf,n_img):
+def save_normalized_copy(psf,n_img,bet_path):
     '''
     Saves a copy of the given PSF, after apodizing and normalizing it
 
@@ -80,33 +83,37 @@ def save_normalized_copy(psf,n_img):
         
     Returns
     -------
-    bckgr = 
 
     '''
+    # True PSF
+    createTruePSF(psf)
+    psf = psf.replace("mean", "true")
+    
+    # Rotate
+    align_rotation(psf, bet_path)
+    psf.replace("true","rot")
+    
+    
     # Copy of psf
     with fits.open(psf) as hdul:
         img = hdul[0].data
         hdr = hdul[0].header
         
-        dx = min(np.shape(n_img)[-1],np.shape(img)[-1])
-        dy = min(np.shape(n_img)[-2],np.shape(img)[-2])
-        
-        img = crop_image(img, dx, dy)
-        n_img = crop_image(n_img, dx, dy)
+        img = crop_image(img, 50, 50)
+        n_img = crop_image(n_img, 50, 50)
         
         img[img<0]=np.min(img[img>0])
         img[n_img<=0]=np.min(img[img>0])
         
         # Apodizing
-        x,y = np.shape(hdul[0].data)
-        gauss = gauss_map(x,y,20)
+        gauss = gauss_map(50,50,15)
         img *= gauss
-        img /= hdul[0].data.sum()
+        img /= hdul[0].data.max()
         
         img = np.nan_to_num(img)
         
         n_hdul = fits.PrimaryHDU(img,header=hdr)
-        n_hdul.writeto(psf.replace("mean","norm")
+        n_hdul.writeto(psf.replace("true","norm")
                                ,output_verify='silentfix',overwrite=True)
         print(G + "Copy of " + psf + W)      
     return
@@ -128,12 +135,11 @@ def save_pos_copy(path,psf):
     
     with fits.open(psf) as hdul:
         n_img = hdul[0].data
-        
-    dx = min(np.shape(n_img)[-1],np.shape(img)[-1])
-    dy = min(np.shape(n_img)[-2],np.shape(img)[-2])
     
-    img = crop_image(img, dx, dy)
+    img = crop_image(img, 50, 50)
         
+    gauss = gauss_map(50,50,15)
+    img *= gauss
     img_min=0
     img[img<0] = np.min(img[img>0])
     
@@ -144,7 +150,7 @@ def save_pos_copy(path,psf):
     return img_min
 
 
-def deconvolution(img,psf,n=15,img_min=0):
+def deconvolution(img,psf,n=50,img_min=0):
     '''
     Attempts a deconvolution on img using a given psf.
 
@@ -158,10 +164,10 @@ def deconvolution(img,psf,n=15,img_min=0):
         Number of iterations
     '''
 
-    if os.path.exists(img.replace("norm","deconvolution")):
-        os.remove(img.replace("norm","deconvolution"))
-    stsdas.analysis.restore.lucy(img, psf, img.replace("norm","deconvolution"), 40, 0,
-                                 niter=n, limchisq=1e-10,verbose=False,nsave=5)
+    if os.path.exists(img.replace("norm","deconvolution-temp")):
+        os.remove(img.replace("norm","deconvolution-temp"))
+    stsdas.analysis.restore.lucy(img, psf, img.replace("norm","deconvolution-temp"), 40, 0,
+                                 niter=n, limchisq=1e-10,verbose=False,nsave=2)
     return
 
 def get_matching_psf(path):
@@ -187,7 +193,7 @@ def get_matching_psf(path):
     if os.path.exists(deconv_match) :
         with open(deconv_match,"r") as read_file:
             corr_path = read_file.readlines()[0]
-            return corr_path
+            return corr_path.replace("\n","")
     
     ald_path = path[:-len(path.split('/')[-6] + "/" +
                                  path.split('/')[-5] + "/" +
@@ -266,7 +272,7 @@ def apply_deconvolution(path):
         
     
     # Normalize psf copy
-    save_normalized_copy(psf_path,d_img)
+    save_normalized_copy(psf_path,d_img,path)
     psf_path.replace("mean","norm")
     
     with fits.open(psf_path.replace("mean","norm")) as psf:
@@ -276,98 +282,95 @@ def apply_deconvolution(path):
     deconvolution(path.replace("mean","norm"),psf_path.replace("mean","norm"),img_min=img_min)
     
     # Getting deconv
-    with fits.open(path.replace("mean", "deconvolution"),ignore_missing_end=True) as hdul:
+    with fits.open(path.replace("mean", "deconvolution-temp"),ignore_missing_end=True) as hdul:
         deconv = hdul[0].data
         hdr = hdul[0].header
         
     deconv += img_min
     
     hdul = fits.PrimaryHDU(deconv,header=hdr)
+    hdul.writeto(path.replace("mean", "deconvolution-temp"),overwrite=True,output_verify="silentfix")
+    
+    # Plot iterations
+    directory = path[:-len(path.split("/")[-1])]
+    i,d,err = getDiameterAndIteration(directory)
+    pxToMas = hdr["CD2_2"]*3600*1000
+    plt.figure()
+    plt.scatter(i,np.array(d))
+    # plt.hlines(44,0,50)
+    plt.xlabel("Iterations")
+    plt.ylabel("Diameter (mas)")
+    plt.show(block=False)
+    
+    
+    # Datacube of every iteration
+    
+    it, imgs = [],[]
+    with fits.open(path.replace("mean","deconvolution-temp")) as hdul:
+        final = hdul[0].data
+        imgs.append(final)
+        it.append(50)
+    
+    os.remove(path.replace("mean","deconvolution-temp"))
+        
+    for f in os.listdir(directory):
+        if "temp" in f:
+            with fits.open(directory+f) as hdul:
+                img = hdul[0].data
+                hdr1 = hdul[0].header
+                
+                imgs.append(img)
+                it.append(hdr1["NO_ITER"])
+            os.remove(directory+f)
+               
+    index = range(len(it))
+    index = [x for _,x in sorted(zip(it,index))]
+    imgs = [imgs[i] for i in index]
+    
+    with fits.open(path.replace("mean","norm")) as hdul:
+        imgs.insert(0,hdul[0].data)
+    
+    data = np.stack((imgs))
+    
+    
+    hdul = fits.PrimaryHDU(data,header=hdr)
     hdul.writeto(path.replace("mean", "deconvolution"),overwrite=True,output_verify="silentfix")
     
-    reconv = convolve2d(deconv, d_psf,mode='same')
-    
-    fig,ax = plt.subplots(2,2)
-    
-    ax[0,0].imshow(d_img,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    ax[0,0].set_title("Betelgeuse : " + path.split('/')[-2])
-    ax[1,1].imshow(d_psf,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    ax[1,1].set_title("Aldebaran " + path.split('/')[-4])
-    ax[1,0].imshow(deconv,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    ax[1,0].set_title("Deconvolution")
-    ax[0,1].imshow(reconv,norm=PowerNorm(0.3),cmap="afmhot",interpolation='bicubic')
-    ax[0,1].set_title("Reconvolution")
-    
-    i = 0
-    for f in os.listdir("/home/tdewacher/Images/"):
-        if path.split("/")[-7] + "-" + path.split('/')[-4] + "_" + path.split("/")[-6] in f:
-            i += 1
-    
-    plt.savefig("/home/tdewacher/Images/"+ path.split("/")[-7] + "-" + path.split('/')[-4] + "_" + path.split("/")[-6] + "-" + str(i) + ".png")
-    return 
+    return
 
-def Gauss2D(XY,A,fwhm,y0,x0,c):
+def getDiameterAndIteration(directory):
     '''
-    2D gauss function
+    Returns the diameter and the corresponding iteration
 
     Parameters
     ----------
-    XY : [X,Y]
-        Array containing the values (array or single) of x and y.
-    A : nbr
-        Max value.
-    fwhm : nbr
-        Full Width at Half max.
-    x0 : nbr
-        x component of the center.
-    y0 : nbr
-        y component of the center.
-    c : nbr
-        offset on the z axis.
+    directory : path to the directory
 
     Returns
     -------
-    Z: array/nbr
-        The value at (X,Y)
+    i : iteration
+    d : diameter
 
     '''
-    x,y = XY
-    s = fwhm/FWHM_TO_SIGMA
-    
-    return A * np.exp(-((x-x0)**2 + (y-y0)**2)/(2*s**2)) + c
-
-def Gauss2D_ravel(XY,A,fwhm,x0,y0,c):
-    return np.ravel(Gauss2D(XY,A,fwhm,x0,y0,c))
-
-def getFwhm(img):
-    guess = [np.max(img),10,0,0,0]
-    
-    y,x = np.indices(np.shape(img))
-    x = x - np.shape(x)[1]/2
-    y = y - np.shape(y)[0]/2
-    
-    try:
-        popt, pcov = curve_fit(Gauss2D_ravel,(x,y),img.ravel(),p0=guess)
-    except RuntimeError:
-        print(R + "RunTimeError", " Sending back absurd values" + W)
-        popt = [0,1000,0,0,0]
-        pass
-    
-    return popt[1]
-
-def getFwhmAndIteration(directory):
     i = []
-    fwhm = []
+    d = []
+    err = []
     for f in os.listdir(directory):
-        if "deconvolution" in f and ".fits" in f:
-            with fits.open(directory+f) as hdul:
+        if "temp" in f and ".fits" in f:
+            with fits.open(directory+f) as hdul:                
                 img = hdul[0].data
                 hdr = hdul[0].header
                 
-                i.append(int(hdr["NO_ITER"]))
-                fwhm.append(getFwhm(img))
+                # Getting Diameter;
+                X,Y = np.indices(np.shape(img),dtype=float)
+                opt, cov = curve_fit(LDD_1D, (X, Y), np.ravel(img), p0=[50, 0.5])
                 
-    return i,fwhm
+                # append
+                i.append(int(hdr["NO_ITER"]))
+                d.append(opt[0])
+                err.append(cov[0,0])
+                
+    return i,d,err
         
 
 def showPlanche(folders):
@@ -443,93 +446,60 @@ def showPlanche(folders):
                     
         
         plt.show()
+
+def createTruePSF(path):
+    with fits.open(path) as hdul:
+        hdr = hdul[0].header
+        
+    pxToDeg = hdr["CD2_2"]
+    filt = path.split('/')[-4]
+    i = getBand(filt)
+    true_psf = main+"synthetic_psf/"+i+"-"+str(pxToDeg)+".fits"
     
+    if not os.path.exists(true_psf):
+        createSynthPSF((10,10),pxToDeg*1000*3600,i+"-"+str(pxToDeg))
+        
+    if os.path.exists(path.replace("mean","true")):
+        os.remove(path.replace("mean", "true"))
+    stsdas.analysis.restore.lucy(path, true_psf, path.replace("mean","true"), 40, 0,
+                                 niter=1, limchisq=1e-10,verbose=False,nsave=5)
+        
+
+
+# =============================================================================
+#                                    MAIN
+# =============================================================================
 
 
 main = "/home/tdewacher/Documents/Stage/" 
-folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
+folders = ["P82-2008-2009"]
+
+start = time.time()
+clean_list = []
+
+for f in folders:
+    for obj in os.listdir(main+f):
+        if obj != "Betelgeuse": 
+            continue
+        for times in os.listdir(main+f+"/"+obj):
+            for filt in os.listdir(main+f+"/"+obj+"/"+times):
+                if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                    for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
+                        if "_bad" in name:
+                            continue
+                        file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
+                        clean_list.append(file)
+
+print(B + str(len(clean_list)) + " files to work on" + W)
 
 
-showPlanche(folders)
-
-
-
-
-
-# # folders = ["P82-2008-2009"]
-
-# start = time.time()
-# clean_list = []
-
-# for f in folders:
-#     for obj in os.listdir(main+f):
-#         if obj != "Betelgeuse": 
-#             continue
-#         for times in os.listdir(main+f+"/"+obj):
-#             for filt in os.listdir(main+f+"/"+obj+"/"+times):
-#                 if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-#                     for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-#                         if "_bad" in name:
-#                             continue
-#                         file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
-#                         clean_list.append(file)
-
-# print(B + str(len(clean_list)) + " files to work on" + W)
-
-
-# # for i in range(len(clean_list)):
-# #     f = clean_list[i]
+for i in range(len(clean_list)):
+    f = clean_list[i]
+    print(G + "Working on " + f + W)
     
-# #     print(G + "Working on " + f + W)
+    # Deconvolution
+    apply_deconvolution(f+"_mean.fits")
     
-# #     filt = f.split("/")[-4]
-# #     name = f.split("/")[-1]
+    print(B + str(i+1) + "/" + str(len(clean_list)) + " \n" + W)
     
-# #     # if os.path.exists(f+"_deconvolution.fits"): continue
-    
-# #     # Deconvolution
-# #     apply_deconvolution(f+"_mean.fits")
-# #     print(B + str(i+1) + "/" + str(len(clean_list)) + " \n" + W)
-    
-    
-# #     # Plot every image
-# #     # filt = f.split('/')[-4]
-# #     # epoch = f.split('/')[-7]
-# #     # with fits.open(f+"_deconvolution.fits") as hdul:
-# #     #     hdr = hdul[0].header
-# #     #     img = hdul[0].data
-        
-# #     #     fov = hdr['CD2_2']*hdr['NAXIS2']/2
-# #     #     fov *= 3600*1000
-        
-# #     #     plt.figure()
-# #     #     plt.imshow(img,norm=PowerNorm(0.3),cmap="afmhot",origin="lower",
-# #     #                 extent=[fov, -fov, -fov, fov], aspect="equal",interpolation='bicubic')
-# #     #     plt.colorbar()
-# #     #     plt.xlabel("Ascension droite relative (mas)")
-# #     #     plt.ylabel("Declinaison relative (mas)")
-# #     #     plt.title(epoch + " : " + filt)
-        
-# #     #     # Angular diameter
-# #     #     star = plt.Circle((-fov/np.shape(img)[0],fov/np.shape(img)[1]), 43.7,color='b',fill=False,alpha=0.5)
-# #     #     ax = plt.gca()
-# #     #     ax.add_patch(star)
-        
-# #     #     plt.draw()
-    
-
-# # print(G + "Temps écoulé : " + str(int(time.time() - start)) + "s" + W)
-
-# # plt.legend()
-# # plt.show(block=False)
-
-# fig,ax = plt.subplots(1,6)
-# i = 0
-# for sigma in [1,5,10,15,20,30]:
-#     apply_deconvolution("/home/tdewacher/Documents/Stage/P82-2008-2009/Betelgeuse/0.007204/NB_1.26,/export/P82-2008-2009NACO.2009-01-03T02:23:51.357/P82-2008-2009NACO.2009-01-03T02:23:51.357_mean.fits")
-#     with fits.open("/home/tdewacher/Documents/Stage/P82-2008-2009/Betelgeuse/0.007204/NB_1.26,/export/P82-2008-2009NACO.2009-01-03T02:23:51.357/P82-2008-2009NACO.2009-01-03T02:23:51.357_deconvolution.fits") as hdul:
-#         ax[i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot")
-#         ax[i].set_title("sigma : " + str(sigma))
-#         i +=1
-        
-# plt.show()
+    plt.show(block=False)

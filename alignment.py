@@ -82,34 +82,8 @@ def align_datacube(datacube):
     return datacube
 
 def gauss_map(dx,dy,A):
-    Y,X = np.indices((dx,dy))
+    Y,X = np.indices((dx,dy),dtype=float)
     return Gauss2D([X,Y],A,5,dx/2,dy/2,0)
-    
-# def radius_map(dx,dy):
-#     '''
-#     Returns a 2D array of size (dx,dy) where each value is the distance to the center
-
-#     Parameters
-#     ----------
-#     dx : int
-#         horizontal size.
-#     dy : int
-#         vertical size.
-
-#     Returns
-#     -------
-#     map : 2D array
-#         The radius map.
-
-#     '''
-    
-#     x,y = np.arange(0,dx), np.arange(0,dy)
-#     X,Y = np.meshgrid(x,y)
-    
-#     X = X - dx/2
-#     Y = Y - dy/2
-    
-#     return np.sqrt(X**2 + Y**2)
 
 def Gauss2D(XY,A,fwhm,y0,x0,c):
     '''
@@ -169,7 +143,7 @@ def get_gaussian_to_image(img):
     '''
     guess = [np.max(img),10,0,0,0]
     
-    y,x = np.indices(np.shape(img))
+    y,x = np.indices(np.shape(img),dtype=float)
     x = x - np.shape(x)[1]/2
     y = y - np.shape(y)[0]/2
     
@@ -380,8 +354,8 @@ def interpolate_bad_pixel(img,mask):
 
 
 main = "/home/tdewacher/Documents/Stage/" 
-folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
-# folders = ["P90-2012-2013"]
+# folders = ["P82-2008-2009","P88-2011-2012","P90-2012-2013","P94-2014-2015"]
+folders = ["P94-2014-2015"]
 
 start = time.time()
 clean_list = []
@@ -399,53 +373,22 @@ for f in folders:
                             continue
                         file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
                         clean_list.append(file)
-
-
-# # Manual Selecting good images
-# for f in clean_list:
-#     f = f+"_clean.fits"
-#     with fits.open(f) as hdul:
-#         if len(np.shape(hdul[0].data)) == 3:
-#             img = hdul[0].data[0,:,:]
-#         else:
-#             img = hdul[0].data[:,:]
-            
-#         plt.figure()
-#         img = np.nan_to_num(img)
-#         plt.subplot(1,2,1)
-#         name = f.split('/')[-1]
-#         plt.imshow(img)
-#         plt.title(name)
-        
-#         plt.subplot(1,2,2)
-#         plt.hist(np.ravel(img),bins=50,log=True)
-#         plt.title("Distribution")
-        
-#         plt.show()
-        
-#         keep = input("Keep? (Y/N)")
-        
-#         if keep == "N":
-#             path = f[:-len(name)-1]
-            
-#             os.rename(path,path+"_bad")
-            
-#         plt.close('all')
             
 
 
-# print(B + f"{len(clean_list)} files to work on" + W)
+print(B + f"{len(clean_list)} files to work on" + W)
 
-# for i in range(len(clean_list)):
-#     f = clean_list[i]
-#     if os.path.exists(f+"_mean.fits"):
-#         continue
-#     print(B + f"{i+1}/{len(clean_list)} \n" + W)
-#     print(G + "Centering..." + W)
-#     # save_centered_to_file(f+"_clean.fits")
-#     print(G + "Getting FWHM..." + W)
-#     # save_fwhm_to_file(f+"_centered.fits")
-#     print(G + "Meaning..." + W)
-#     save_mean_image(f+"_fwhm.csv", f+"_centered.fits")
+for i in range(len(clean_list)):
+    f = clean_list[i]
+    if os.path.exists(f+"_mean.fits"):
+        continue
+    print(B + f"{i+1}/{len(clean_list)} \n" + W)
+    print(G + "Centering..." + W)
+    save_centered_to_file(f+"_clean.fits")
+    print(G + "Getting FWHM..." + W)
+    save_fwhm_to_file(f+"_centered.fits")
+    print(G + "Meaning..." + W)
+    save_mean_image(f+"_fwhm.csv", f+"_centered.fits")
 
-# print(G + f"Temps écoulé : {int(time.time() - start)}s" + W)
+print(G + f"Temps écoulé : {int(time.time() - start)}s" + W)
+
