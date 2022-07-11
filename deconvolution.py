@@ -21,6 +21,7 @@ from scipy.optimize import curve_fit
 from SynthPSF import getBand,createSynthPSF
 from test_fit_UD import LDD_1D
 from RotateImage import align_rotation
+from scipy.ndimage import interpolation
 stsdas()
 stsdas.analysis()
 stsdas.analysis.restore()
@@ -91,7 +92,7 @@ def save_normalized_copy(psf,n_img,bet_path):
     
     # Rotate
     align_rotation(psf, bet_path)
-    psf.replace("true","rot")
+    psf = psf.replace("true","rot")
     
     
     # Copy of psf
@@ -99,23 +100,29 @@ def save_normalized_copy(psf,n_img,bet_path):
         img = hdul[0].data
         hdr = hdul[0].header
         
-        img = crop_image(img, 50, 50)
-        n_img = crop_image(n_img, 50, 50)
+        
+        dy,dx = np.shape(img)
+        dx = min(dx,np.shape(n_img)[0])
+        dy = min(dy,np.shape(n_img)[1])
+        
+        img = crop_image(img, dx, dy)
+        n_img = crop_image(n_img, dx, dy)
         
         img[img<0]=np.min(img[img>0])
         img[n_img<=0]=np.min(img[img>0])
         
         # Apodizing
-        gauss = gauss_map(50,50,15)
+        gauss = gauss_map(dy,dx,15)
         img *= gauss
         img /= hdul[0].data.max()
         
         img = np.nan_to_num(img)
         
         n_hdul = fits.PrimaryHDU(img,header=hdr)
-        n_hdul.writeto(psf.replace("true","norm")
+        n_hdul.writeto(psf.replace("rot","norm")
                                ,output_verify='silentfix',overwrite=True)
-        print(G + "Copy of " + psf + W)      
+        
+    print(G + "Copy of " + psf + W)      
     return
 
 def save_pos_copy(path,psf):
@@ -135,10 +142,10 @@ def save_pos_copy(path,psf):
     
     with fits.open(psf) as hdul:
         n_img = hdul[0].data
-    
-    img = crop_image(img, 50, 50)
         
-    gauss = gauss_map(50,50,15)
+        
+    dx,dy = np.shape(n_img)
+    gauss = gauss_map(dx,dy,15)
     img *= gauss
     img_min=0
     img[img<0] = np.min(img[img>0])
@@ -146,7 +153,7 @@ def save_pos_copy(path,psf):
     n_hdul = fits.PrimaryHDU(img,header=hdr)
     n_hdul.writeto(path.replace("mean","norm")
                            ,output_verify='silentfix',overwrite=True)
-    print(G + "Copy of " + path + W)      
+    print(G + "Copy of " + path + W)
     return img_min
 
 
@@ -269,6 +276,7 @@ def apply_deconvolution(path):
     # Getting img
     with fits.open(path.replace("mean","norm")) as img:
         d_img = img[0].data
+        hdr_img = img[0].header
         
     
     # Normalize psf copy
@@ -277,6 +285,32 @@ def apply_deconvolution(path):
     
     with fits.open(psf_path.replace("mean","norm")) as psf:
         d_psf = psf[0].data
+        hdr_psf = psf[0].header
+        
+    # Dimension
+    dx,dy = np.shape(d_img)
+    dx1,dy1 = np.shape(d_psf)
+    dl = min(dx,dx1,dy,dy1)
+    
+    # Cropping
+    d_img = crop_image(d_img, dl, dl)
+    d_psf = crop_image(d_psf, dl, dl)
+    
+    # Rescaling
+    d_img = interpolation.zoom(d_img,2)
+    d_psf = interpolation.zoom(d_psf,2)
+    
+    # Change pixel size
+    hdr_img["CD2_2"] /= 2
+    hdr_psf["CD2_2"] /= 2
+    
+    
+    hdul_psf = fits.PrimaryHDU(d_psf,header=hdr_psf)
+    hdul_psf.writeto(psf_path.replace("mean","norm"),overwrite=True,output_verify="silentfix")
+    
+    hdul_bet = fits.PrimaryHDU(d_img,header=hdr_img)
+    hdul_bet.writeto(path.replace("mean","norm"),overwrite=True,output_verify="silentfix")
+    
         
     # Saving deconvolution
     deconvolution(path.replace("mean","norm"),psf_path.replace("mean","norm"),img_min=img_min)
@@ -296,10 +330,11 @@ def apply_deconvolution(path):
     i,d,err = getDiameterAndIteration(directory)
     pxToMas = hdr["CD2_2"]*3600*1000
     plt.figure()
-    plt.scatter(i,np.array(d))
-    # plt.hlines(44,0,50)
+    # plt.scatter(i,0.79*(np.array(d)*pxToMas)+21,marker='+',color='red')
+    plt.errorbar(i,0.79*(np.array(d)*pxToMas)+21,yerr=0.79*(np.array(err)*pxToMas),fmt=".",color="gray")
+    plt.hlines(44,0,50)
     plt.xlabel("Iterations")
-    plt.ylabel("Diameter (mas)")
+    plt.ylabel("Angular Diameter (mas)")
     plt.show(block=False)
     
     
@@ -338,6 +373,39 @@ def apply_deconvolution(path):
     
     return
 
+def Gauss2D(XY,A,fwhm):
+    '''
+    2D gauss function
+
+    Parameters
+    ----------
+    XY : [X,Y]
+        Array containing the values (array or single) of x and y.
+    A : nbr
+        Max value.
+    fwhm : nbr
+        Full Width at Half max.
+    x0 : nbr
+        x component of the center.
+    y0 : nbr
+        y component of the center.
+    c : nbr
+        offset on the z axis.
+
+    Returns
+    -------
+    Z: array/nbr
+        The value at (X,Y)
+
+    '''
+    x,y = XY
+    s = fwhm/FWHM_TO_SIGMA
+    
+    return A * np.exp(-((x)**2 + (y)**2)/(2*s**2))
+    
+def Gauss2D_ravel(XY,A,fwhm):
+    return np.ravel(Gauss2D(XY,A,fwhm))
+
 def getDiameterAndIteration(directory):
     '''
     Returns the diameter and the corresponding iteration
@@ -363,13 +431,14 @@ def getDiameterAndIteration(directory):
                 
                 # Getting Diameter;
                 X,Y = np.indices(np.shape(img),dtype=float)
-                opt, cov = curve_fit(LDD_1D, (X, Y), np.ravel(img), p0=[50, 0.5])
+                X -= np.shape(X)[0]/2 - 0.5
+                Y -= np.shape(Y)[1]/2 - 0.5
+                opt, cov = curve_fit(Gauss2D_ravel, (X, Y), np.ravel(img), p0=[np.max(img), 5])
                 
                 # append
                 i.append(int(hdr["NO_ITER"]))
-                d.append(opt[0])
-                err.append(cov[0,0])
-                
+                d.append(opt[1])
+                err.append(np.sqrt(cov[1,1]))           
     return i,d,err
         
 
