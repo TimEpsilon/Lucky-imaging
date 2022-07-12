@@ -147,17 +147,15 @@ def save_pos_copy(path,psf):
     dx,dy = np.shape(n_img)
     gauss = gauss_map(dx,dy,15)
     img *= gauss
-    img_min=0
     img[img<0] = np.min(img[img>0])
     
     n_hdul = fits.PrimaryHDU(img,header=hdr)
     n_hdul.writeto(path.replace("mean","norm")
                            ,output_verify='silentfix',overwrite=True)
     print(G + "Copy of " + path + W)
-    return img_min
 
 
-def deconvolution(img,psf,n=50,img_min=0):
+def deconvolution(img,psf,n=50):
     '''
     Attempts a deconvolution on img using a given psf.
 
@@ -271,7 +269,7 @@ def apply_deconvolution(path):
         return
     
     # Creating positive img
-    img_min = save_pos_copy(path,psf_path)
+    save_pos_copy(path,psf_path)
     
     # Getting img
     with fits.open(path.replace("mean","norm")) as img:
@@ -313,14 +311,12 @@ def apply_deconvolution(path):
     
         
     # Saving deconvolution
-    deconvolution(path.replace("mean","norm"),psf_path.replace("mean","norm"),img_min=img_min)
+    deconvolution(path.replace("mean","norm"),psf_path.replace("mean","norm"))
     
     # Getting deconv
     with fits.open(path.replace("mean", "deconvolution-temp"),ignore_missing_end=True) as hdul:
         deconv = hdul[0].data
         hdr = hdul[0].header
-        
-    deconv += img_min
     
     hdul = fits.PrimaryHDU(deconv,header=hdr)
     hdul.writeto(path.replace("mean", "deconvolution-temp"),overwrite=True,output_verify="silentfix")
