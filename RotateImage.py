@@ -53,9 +53,7 @@ def align_rotation(ald,bet):
         hdr_bet = hdul[0].header
         
     # Getting the angle
-    alpha = (hdr_bet["HIERARCH ESO TEL PARANG START"] - hdr_ald["HIERARCH ESO TEL PARANG START"])
-    print(alpha)
-    
+    alpha = -(hdr_bet["HIERARCH ESO TEL PARANG START"] - hdr_ald["HIERARCH ESO TEL PARANG START"])
     rotated = rotate(img_ald,alpha,reshape=False)
     
     # Crop image

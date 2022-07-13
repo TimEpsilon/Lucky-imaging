@@ -12,6 +12,7 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 from FinalImageSelection import get_deconvolution_datacube
 import pandas as pd
+from colour import Color
 
 plt.close('all')
 
@@ -34,7 +35,7 @@ def getRadioProfile(path,n=30):
         hdr = hdul[0].header
         
     dx,dy = np.shape(img)
-    R = np.hypot(dx,dy)
+    R = np.hypot(dx,dy)/2
     r = np.linspace(0,R,n)
     dr = R/n
     
@@ -53,17 +54,51 @@ def getRadioProfile(path,n=30):
             color = colors[i]
             break
         
+    fig = [plt.figure(j) for j in range(10)]
     
-    
-    
-    # plt.figure()
-    plt.plot(r,somme/np.max(somme))
+    plt.figure(fig[i].number)
+    plt.plot(r,somme,label=path.split(".")[-2][:3])
     plt.yscale("log")
-    plt.vlines(45,0,1,color=color,label=filt)
+    # plt.vlines(45,0,1,color="red")
     plt.xlabel("Radius (mas)")
     plt.ylabel("Intensite")
-    # plt.show()
+    plt.title(filt)
+    plt.legend()
     
+    
+def plot_datacube(path):
+    with fits.open(path) as hdul:
+        img = hdul[0].data
+        hdr = hdul[0].header
+        
+        n = 50
+        t,dx,dy = np.shape(img)
+        R = np.hypot(dx,dy)/2
+        r = np.linspace(0,R,n)
+        dr = R/n
+        red = Color("red")
+        colors = list(red.range_to(Color("black"),t))
+        
+        plt.figure()
+        for j in range(t):
+            if j % 1 != 0: 
+                continue
+            somme = []
+            for i in r:
+                somme.append(getMeanBetween(img[j,:,:],i,i+dr))
+            plt.plot(r*hdr["CD2_2"]*1000*3600,somme,color=colors[j].get_web(),label=j,linewidth=0.5)
+            plt.yscale("log")
+            plt.title(path.split("/")[-1])
+            plt.xlabel("Radius (mas)")
+            plt.ylabel("Intensite")
+            plt.legend()
+            plt.show()
+            
+        
+# =============================================================================
+#                                   MAIN
+# =============================================================================
+
     
 directory = "/home/tdewacher/Documents/Stage/P82-2008-2009/"  
 deconv = get_deconvolution_datacube(directory)
@@ -71,5 +106,8 @@ deconv = get_deconvolution_datacube(directory)
 for path in deconv:
     getRadioProfile(path.replace("deconvolution","final"),n=30)
     
-plt.legend()
+for path in deconv:
+    plot_datacube(path)
+    
+
 plt.show()

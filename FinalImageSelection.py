@@ -224,11 +224,11 @@ def createDatacubeOfEpoch(directory):
     
     
     
-    hdul.writeto(directory+"Betel_AllFilters.fits")
+    hdul.writeto(directory+"Betel_AllFilters.fits",overwrite=True)
 
 # =============================================================================
 #                                  MAIN
 # =============================================================================
 
 directory = "/home/tdewacher/Documents/Stage/P82-2008-2009/"
-# createDatacubeOfEpoch(directory)
+createDatacubeOfEpoch(directory)
