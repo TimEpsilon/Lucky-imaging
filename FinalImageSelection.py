@@ -12,6 +12,8 @@ import os
 from astropy.io import fits
 from astropy.visualization import wcsaxes
 from astropy.wcs import WCS
+from getSED import getFluxTheorique
+import astropy.units as u
 
 def crop_image(img,dx):
     '''
@@ -142,16 +144,45 @@ def final_by_filter(directory):
         
         # Iterate over row at same filter
         for index,row in df_filt.iterrows():
+            path = row["Path"]
+            ald = get_matching_psf(path)
+            coeff = callibrationAldebaran(ald)
+            
             i = int(row["ID"])-1
             # Select 
-            with fits.open(row["Path"]) as hdul:
+            with fits.open(path) as hdul:
                 img = hdul[0].data[i,:,:]
                 hdr = hdul[0].header
                 hdr["NO_ITER"] = i*2
+                hdr["BUNIT"] = f"{coeff.unit}"
+                
+                
+                dx,dy = np.shape(img)
+                X,Y = np.indices((dx,dy),dtype=float)
+                X -= dx/2.0
+                Y -= dy/2.0
+                R = np.hypot(X,Y)
+                r = 75
+                
+                # Background flux
+                mask = np.logical_and(R<=dx/2, R>dx/2-50)
+                bckgr = np.mean(img[mask])
+                
+                # Total flux
+                flux = (img[R<=r]-bckgr).sum()
+                
+                print(path.split('/')[-4],flux*coeff)
                 
             # Save image
-            hdul = fits.PrimaryHDU(img,header=hdr)
+            hdul = fits.PrimaryHDU(img,header=hdr,scale_back=True)
             hdul.writeto(row["Path"].replace("deconvolution","final"),overwrite=True)
+            
+            with fits.open(row["Path"].replace("deconvolution","final"),mode="update",do_not_scale_image_data=True) as hdul:
+                hdr = hdul[0].header
+                hdr["bscale"] = coeff.value
+                hdr["bzero"] = 0
+                hdul.flush()
+            
             
         # Create selection file if not exist
         # In order to work, the user needs to delete the unwanted paths from the file
@@ -166,15 +197,84 @@ def final_by_filter(directory):
             path = text.readline()[:-1]
             
         # Opening the image
-        with fits.open(path.replace("deconvolution","final")) as hdul:
+        with fits.open(path.replace("deconvolution","final"),do_not_scale_image_data=True) as hdul:
             hdr = hdul[0].header
             img = hdul[0].data
             
         # Copying the image
-        hdul = fits.PrimaryHDU(img,header=hdr)
+        hdul = fits.PrimaryHDU(img,header=hdr,scale_back=True)
         hdul.writeto(filt_path+"/bestoff_filter.fits",overwrite=True)
         
+        with fits.open(filt_path+"/bestoff_filter.fits",mode="update",do_not_scale_image_data=True) as hdul:
+            hdr = hdul[0].header
+            hdr["bscale"] = coeff.value
+            hdr["bzero"] = 0
+            hdul.flush()
+  
+def callibrationAldebaran(path):
+    '''
+    Calculates the callibration coefficient based on an Aldebaran image after lucky imaging
+
+    Parameters
+    ----------
+    path : str
+        Path to aldebaran.
+
+    Returns
+    -------
+    coeff : nbr
+        The coefficient to multiply the flux with.
+    '''
+    # Open
+    with fits.open(path) as hdul:
+        img = hdul[0].data
+    filt = path.split("/")[-4][:-1]
         
+    # Radius map
+    dx,dy = np.shape(img)
+    X,Y = np.indices((dx,dy),dtype=float)
+    X -= dx/2.0
+    Y -= dy/2.0
+    R = np.hypot(X,Y)
+    r = 25
+    
+    # Background flux
+    mask = np.logical_and(R<=dx/2, R>dx/2-15)
+    bckgr = np.mean(img[mask])
+    
+    # Total flux
+    flux = (img[R<=r]).sum()-bckgr
+    
+    # Getting flux theory
+    theory = getFluxTheorique(filt)
+    # Calculating coefficient
+    coeff = theory / flux
+    # It is supposed that the integration time is the same for aldebaran and betelgeuse
+    return coeff
+  
+def get_matching_psf(path):
+    '''
+    Returns the path to corresponding Aldebaran mean image
+
+    Parameters
+    ----------
+    path : str
+        path to the Betelgeuse mean image.
+
+    Returns
+    -------
+    corr_path : str
+        The corresponding (same epoch and filter) Aldebaran path.
+
+    '''
+    corr_path = None
+    
+    deconv_match = path[:-len(path.split('/')[-1])] + "deconvolution_match.txt"
+    if os.path.exists(deconv_match) :
+        with open(deconv_match,"r") as read_file:
+            corr_path = read_file.readlines()[0]
+    return corr_path.replace("\n","")
+      
 def createDatacubeOfEpoch(directory):
     '''
     Creates a datacube, sorted from low to high wavelengths, of every best image at a given epoch
@@ -212,6 +312,9 @@ def createDatacubeOfEpoch(directory):
     for path in bestoff:
         with fits.open(path) as hdul:
             img = hdul[0].data
+            pxToMas = hdul[0].header["CD2_2"]
+            unit = hdul[0].header["BUNIT"]
+            unit = f"{unit}"
             imgs.append(img)
             dx = min(np.shape(img)[0],dx)
     
@@ -220,7 +323,12 @@ def createDatacubeOfEpoch(directory):
         imgs[i] = crop_image(img, dx)
         
     imgs = np.stack((imgs))
-    hdul = fits.PrimaryHDU(imgs)
+    hdul = fits.PrimaryHDU(imgs,scale_back=True)
+    hdul.header["CD1_1"] = -pxToMas
+    hdul.header["CD1_2"] = 0
+    hdul.header["CD2_1"] = 0
+    hdul.header["CD2_2"] = pxToMas
+    hdul.header["BUNIT"] = unit
     
     
     

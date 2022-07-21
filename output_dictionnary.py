@@ -40,7 +40,7 @@ def save_file(directory):
         text_file.write("Name;Object;LookingAt;Filter;IsNeutralDensity;IntegrationTime\n")
         
         for f in os.listdir(directory):
-            if "master" in f or "median" in f or "clean" in f:
+            if "export" in str(directory) or "AllFilters" in f or "difference_datacube" in f or '.reg' in f or '.csv' in f or "master" in str(directory) or "bestoff" in f:
                 continue
             input_file = os.path.join(directory, f)
                 
@@ -90,14 +90,13 @@ def get_dataframe_from_folder(directory):
         Contains the output of every child file.
 
     """
-    
+    if not os.path.isdir(directory): return
     df = pd.DataFrame({"Name":[],"Object":[],"LookingAt":[],"Filter":[],"IsNeutralDensity":[],"IntegrationTime":[]})
     
     for f in os.listdir(directory):
-        if "master" in f or "median" in f or "clean" in f:
+        if "export" in str(directory) or "AllFilters" in f or "difference_datacube" in f or '.reg' in f or '.csv' in f or "master" in str(directory) or "bestoff" in f:
             continue
         input_file = os.path.join(directory, f)
-        print(input_file)
         
         if ".fits" not in f:
             df_b = get_dataframe_from_folder(input_file)
@@ -116,7 +115,7 @@ def get_dataframe_from_folder(directory):
                                     "Object":[hdr.get("OBJECT")],
                                     "LookingAt":[hdr.get("HIERARCH ESO DPR TYPE")],
                                     "Filter":[filters],
-                                    "IsNeutralDensity":[str(hdr.get("HIERARCH ESO INS OPTI3 NAME") == "ND_Long")],
+                                    "IsNeutralDensity":[hdr.get("HIERARCH ESO INS OPTI3 NAME")],
                                     "IntegrationTime":[str(hdr.get("EXPTIME"))]})
                 df = pd.concat([df,df_b])
                                     
@@ -170,8 +169,6 @@ def move_to_main_folder(directory,main):
     for f in os.listdir(directory):
         child = os.path.join(directory,f)
         move_to_main_folder(child, main)
-        
-            
 
 
 
@@ -182,8 +179,8 @@ print(home)
 # directory = Path(home, "Documents/Stage/P94-2014-2015")
 # save_file(directory)
 
-# directory = Path(home, "Documents/Stage/P82-2008-2009")
-# save_file(directory)
+directory = Path(home, "Documents/Stage/P82-2008-2009")
+save_file(directory)
     
 # directory = Path(home, "Documents/Stage/P88-2011-2012")
 # save_file(directory)

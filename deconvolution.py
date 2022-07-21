@@ -112,7 +112,7 @@ def save_normalized_copy(psf,n_img,bet_path):
         img[n_img<=0]=np.min(img[img>0])
         
         # Apodizing
-        gauss = gauss_map(dy,dx,15)
+        gauss = gauss_map(dy,dx,60)
         img *= gauss
         img /= hdul[0].data.max()
         
@@ -145,7 +145,7 @@ def save_pos_copy(path,psf):
         
         
     dx,dy = np.shape(n_img)
-    gauss = gauss_map(dx,dy,15)
+    gauss = gauss_map(dx,dy,60)
     img *= gauss
     img[img<0] = np.min(img[img>0])
     
@@ -295,12 +295,14 @@ def apply_deconvolution(path):
     d_psf = crop_image(d_psf, dl, dl)
     
     # Rescaling
-    d_img = interpolation.zoom(d_img,2)
-    d_psf = interpolation.zoom(d_psf,2)
+    d_img = interpolation.zoom(d_img,4)
+    d_psf = interpolation.zoom(d_psf,4)
     
     # Change pixel size
-    hdr_img["CD2_2"] /= 2
-    hdr_psf["CD2_2"] /= 2
+    hdr_img["CD2_2"] /= 4
+    hdr_img["CD1_1"] /= 4
+    hdr_psf["CD2_2"] /= 4
+    hdr_psf["CD1_1"] /= 4
     
     
     hdul_psf = fits.PrimaryHDU(d_psf,header=hdr_psf)
@@ -328,9 +330,10 @@ def apply_deconvolution(path):
     plt.figure()
     # plt.scatter(i,0.79*(np.array(d)*pxToMas)+21,marker='+',color='red')
     plt.errorbar(i,0.79*(np.array(d)*pxToMas)+21,yerr=0.79*(np.array(err)*pxToMas),fmt=".",color="gray")
-    plt.hlines(44,0,50)
+    plt.hlines(43.7,0,50)
     plt.xlabel("Iterations")
     plt.ylabel("Angular Diameter (mas)")
+    plt.title(path.split("/")[-1])
     plt.show(block=False)
     
     
@@ -436,81 +439,6 @@ def getDiameterAndIteration(directory):
                 d.append(opt[1])
                 err.append(np.sqrt(cov[1,1]))           
     return i,d,err
-        
-
-def showPlanche(folders):
-    
-    start = time.time()
-    df = pd.DataFrame(data={"path":[],"epoch":[],"filter":[],"type":[]})
-    
-    
-    for f in folders:
-        for obj in os.listdir(main+f):
-            if obj != "Betelgeuse": 
-                continue
-            for times in os.listdir(main+f+"/"+obj):
-                for filt in os.listdir(main+f+"/"+obj+"/"+times):
-                    if os.path.exists(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                        for name in os.listdir(main+f+"/"+obj+"/"+times+"/" + filt + "/export"):
-                            if "_bad" in name:
-                                continue
-                            file = main+f+"/"+obj+"/"+times+"/" + filt + "/export/" + name +"/"+name
-                            df = df.append({"path":file,"epoch":f,"filter":filt,"type":obj},ignore_index=True)
-                     
-                            
-    print(B + str(len(df)) + " files to work on" + W)
-    
-    for f in folders:
-        epoch = df[df["epoch"] == f]
-        filters = np.unique(epoch["filter"])
-        n = len(filters)
-        if n == 0: continue
-        
-        fig1,ax1 = plt.subplots(3,n)
-        
-        
-        
-        for i in range(n):
-            filt = filters[i]
-            
-            files = epoch[epoch["filter"] == filt]
-            betelgeuse = files[files["type"] == "Betelgeuse"]
-            
-            m = len(betelgeuse)
-            
-            plt.ion()
-            fig,ax = plt.subplots(3,m)
-            
-            for j in range(m):
-                with fits.open(betelgeuse["path"].to_numpy()[j]+"_mean.fits") as hdul:
-                    ax[0,j].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot")
-                    ax[0,j].set_title(betelgeuse["path"].to_numpy()[j].split('/')[-1][18:])      
-            plt.suptitle(f + " : " + filt)
-            plt.show(block=False)
-            
-            
-            j = int(input("Betelgeuse id : "))
-            
-            with fits.open(betelgeuse["path"].to_numpy()[j]+"_mean.fits") as hdul:
-                ax1[0,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
-                ax1[0,i].set_title("Betelg - " + filt)
-                
-            apply_deconvolution(betelgeuse["path"].to_numpy()[j]+"_mean.fits")
-            
-            psf = get_matching_psf(betelgeuse["path"].to_numpy()[j]+"_mean.fits")
-            
-            if os.path.exists(psf.replace("mean","norm")):
-                with fits.open(psf.replace("mean","norm")) as hdul:
-                    ax1[2,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
-                    ax1[2,i].set_title("Aldeb - " + filt)
-                
-            if os.path.exists(betelgeuse["path"].to_numpy()[j]+"_deconvolution.fits"):
-                with fits.open(betelgeuse["path"].to_numpy()[j]+"_deconvolution.fits") as hdul:
-                    ax1[1,i].imshow(hdul[0].data,norm=PowerNorm(0.3),cmap="afmhot",interpolation="bicubic")
-                    ax1[1,i].set_title("Deconvol - " + filt)
-                    
-        
-        plt.show()
 
 def createTruePSF(path):
     with fits.open(path) as hdul:
