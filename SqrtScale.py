@@ -33,7 +33,9 @@ class SquareRootScale(mscale.ScaleBase):
         is_separable = True
  
         def transform_non_affine(self, a): 
-            return np.array(abs(a))**0.5
+            result = np.sqrt(a)
+            result[a<0] = - np.sqrt(abs(a[a<0]))
+            return result
  
         def inverted(self):
             return SquareRootScale.InvertedSquareRootTransform()

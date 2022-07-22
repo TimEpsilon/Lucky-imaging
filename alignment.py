@@ -36,7 +36,7 @@ def align(offset,image):
     ----------
     offset : 2D array
         The image to align.
-    offset : 2D array
+    image : 2D array
         The reference image to align to.
 
     Returns

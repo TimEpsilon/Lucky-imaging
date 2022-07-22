@@ -171,8 +171,6 @@ def final_by_filter(directory):
                 # Total flux
                 flux = (img[R<=r]-bckgr).sum()
                 
-                print(path.split('/')[-4],flux*coeff)
-                
             # Save image
             hdul = fits.PrimaryHDU(img,header=hdr,scale_back=True)
             hdul.writeto(row["Path"].replace("deconvolution","final"),overwrite=True)

@@ -114,6 +114,5 @@ for i in range(t):
     bckgr = np.median(img[i,:,:][mask])
     disc.append((img[i,:,:][R<=64] - bckgr).sum())
 ax.plot(max_lambda,disc,"+",color="g")
-print(disc)
 
 
